@@ -19,8 +19,8 @@ final class OptionsStore: ObservableObject {
     private static let presetsKey = "userPresets.v1"
 
     init() {
-        options = Self.load(DownloadOptions.self, key: Self.optionsKey) ?? DownloadOptions()
-        userPresets = Self.load([Preset].self, key: Self.presetsKey) ?? []
+        options = Self.loadOptions() ?? DownloadOptions()
+        userPresets = Self.loadPresets() ?? []
     }
 
     /// Applies a preset but keeps the user's chosen output folder.
@@ -58,9 +58,42 @@ final class OptionsStore: ObservableObject {
         }
     }
 
-    private static func load<T: Decodable>(_ type: T.Type, key: String) -> T? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+    /// Settings saved by an older version lack newer fields. Overlay the saved values on a
+    /// freshly encoded default so new options get their defaults instead of the whole
+    /// decode failing and silently resetting everything.
+    static func mergedWithDefaults(_ saved: [String: Any]) -> DownloadOptions? {
+        guard let defaultsData = try? JSONEncoder().encode(DownloadOptions()),
+              var merged = (try? JSONSerialization.jsonObject(with: defaultsData)) as? [String: Any] else { return nil }
+        for (key, value) in saved where merged[key] != nil { merged[key] = value }
+        guard let data = try? JSONSerialization.data(withJSONObject: merged) else { return nil }
+        if let decoded = try? JSONDecoder().decode(DownloadOptions.self, from: data) { return decoded }
+        // A saved value no longer fits (e.g. a removed enum case): keep what still decodes.
+        var result = DownloadOptions()
+        for (key, value) in saved where merged[key] != nil {
+            var trial = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(result))) as? [String: Any] ?? [:]
+            trial[key] = value
+            if let d = try? JSONSerialization.data(withJSONObject: trial),
+               let ok = try? JSONDecoder().decode(DownloadOptions.self, from: d) { result = ok }
+        }
+        return result
+    }
+
+    private static func loadOptions() -> DownloadOptions? {
+        guard let data = UserDefaults.standard.data(forKey: optionsKey),
+              let saved = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return mergedWithDefaults(saved)
+    }
+
+    private static func loadPresets() -> [Preset]? {
+        guard let data = UserDefaults.standard.data(forKey: presetsKey),
+              let saved = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return nil }
+        return saved.compactMap { entry in
+            guard let name = entry["name"] as? String,
+                  let opts = entry["options"] as? [String: Any],
+                  let options = mergedWithDefaults(opts) else { return nil }
+            let id = (entry["id"] as? String).flatMap(UUID.init(uuidString:)) ?? UUID()
+            return Preset(id: id, name: name, options: options)
+        }
     }
 
     // MARK: Built-in presets

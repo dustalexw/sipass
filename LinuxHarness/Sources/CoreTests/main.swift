@@ -285,5 +285,156 @@ let leftoverTemps = ((try? FileManager.default.contentsOfDirectory(atPath: NSTem
     .filter { $0.hasPrefix("ytdlp-studio-") }
 check(leftoverTemps.isEmpty, "per-job temp folders cleaned up", "\(leftoverTemps.prefix(3))")
 
+
+// MARK: - 6. Music tags
+
+section("Music tags: what audio players will read")
+let infoDir = NSTemporaryDirectory() + "studio-info"
+try? FileManager.default.createDirectory(atPath: infoDir, withIntermediateDirectories: true)
+
+/// A realistic YouTube-style info dict; yt-dlp --load-info-json replays it without network.
+func writeInfo(_ name: String, thumb: String = "thumb.webp", inPlaylist: Bool = true, chapters: Bool = false,
+               _ over: [String: Any] = [:]) -> String {
+    var d: [String: Any] = [
+        "id": "abc123", "title": "Daft Punk - Harder, Better, Faster, Stronger (Official Video)",
+        "uploader": "DaftPunkVEVO", "channel": "DaftPunkVEVO", "upload_date": "20090226",
+        "description": "Official video.", "duration": 20,
+        "webpage_url": "http://127.0.0.1:8766/watch?v=abc123", "extractor": "generic", "extractor_key": "Generic",
+        "_type": "video",
+        "thumbnails": [["url": "http://127.0.0.1:8766/\(thumb)", "id": "0", "width": 1280, "height": 720]],
+        "formats": [["format_id": "18", "url": "http://127.0.0.1:8766/clip.mp4", "ext": "mp4",
+                     "vcodec": "h264", "acodec": "aac", "protocol": "http"]],
+    ]
+    if inPlaylist {
+        d["playlist"] = "Discovery"; d["playlist_title"] = "Discovery"; d["playlist_index"] = 3
+        d["n_entries"] = 14; d["playlist_id"] = "PL1"
+    }
+    if chapters {
+        d["chapters"] = [["start_time": 0, "end_time": 7, "title": "One More Time"],
+                         ["start_time": 7, "end_time": 14, "title": "Aerodynamic"],
+                         ["start_time": 14, "end_time": 20, "title": "Digital Love (Official Audio)"]]
+    }
+    for (k, v) in over { d[k] = v }
+    let path = infoDir + "/\(name).info.json"
+    _ = FileManager.default.createFile(atPath: path, contents: try! JSONSerialization.data(withJSONObject: d))
+    return path
+}
+
+struct Tags {
+    let values: [String: String]
+    let coverSize: (Int, Int)?
+    subscript(_ key: String) -> String { values[key] ?? "" }
+    var squareCover: Bool { if let c = coverSize { return c.0 == c.1 && c.0 > 0 } else { return false } }
+}
+/// Reads tags the way a player sees them: file-level plus audio-stream tags (Ogg keeps them there).
+func readTags(_ path: String) -> Tags {
+    let r = runSync("/usr/bin/ffprobe", ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", path])
+    let obj = (try? JSONSerialization.jsonObject(with: Data(r.stdout.utf8))) as? [String: Any] ?? [:]
+    var out: [String: String] = [:]
+    func absorb(_ t: Any?) {
+        for (k, v) in (t as? [String: Any]) ?? [:] {
+            let key = k.lowercased().replacingOccurrences(of: "_", with: "").replacingOccurrences(of: " ", with: "")
+            out[key] = "\(v)"
+        }
+    }
+    absorb((obj["format"] as? [String: Any])?["tags"])
+    let streams = obj["streams"] as? [[String: Any]] ?? []
+    if let a = streams.first(where: { ($0["codec_type"] as? String) == "audio" }) { absorb(a["tags"]) }
+    let pic = streams.first { ($0["codec_type"] as? String) == "video" }
+    let size = pic.flatMap { p -> (Int, Int)? in
+        guard let w = p["width"] as? Int, let h = p["height"] as? Int else { return nil }
+        return (w, h)
+    }
+    return Tags(values: out, coverSize: size)
+}
+
+func describe(_ t: Tags) -> String {
+    let c = t.coverSize.map { "\($0.0)x\($0.1)" } ?? "none"
+    return "title=\(t["title"]) | artist=\(t["artist"]) | album=\(t["album"]) | albumartist=\(t["albumartist"]) | track=\(t["track"]) | date=\(t["date"]) | cover=\(c)"
+}
+
+func runTagged(_ name: String, info: String, _ configure: (inout DownloadOptions) -> Void = { _ in }) -> DownloadJob {
+    run(name) { o in
+        o.mode = .audio
+        o.extraArgs = "--load-info-json \(CommandBuilder.shellQuote(info))"
+        configure(&o)
+    }
+}
+
+let baseInfo = writeInfo("base")
+for format in [AudioFormat.mp3, .m4a, .flac, .opus] {
+    let j = runTagged("tags \(format.rawValue)", info: baseInfo) { $0.audioFormat = format }
+    let t = readTags(j.outputFiles.first ?? "")
+    let ok = t["title"] == "Harder, Better, Faster, Stronger" && t["artist"] == "Daft Punk" &&
+        t["album"] == "Discovery" && t["albumartist"] == "Daft Punk" &&
+        t["track"].hasPrefix("3") && t["track"].contains("14") && t["date"].hasPrefix("2009") && t.squareCover
+    check(ok, "\(format.rawValue.uppercased()): \(describe(t))", "\(j.status.label) \(j.outputFiles)")
+}
+do {
+    let j = runTagged("tags jpeg thumb", info: writeInfo("jpgthumb", thumb: "thumb.jpg")) { $0.audioFormat = .mp3 }
+    let t = readTags(j.outputFiles.first ?? "")
+    check(t.squareCover, "JPEG thumbnails are cropped square too (cover \(t.coverSize.map { "\($0.0)x\($0.1)" } ?? "none"))")
+}
+do {
+    let info = writeInfo("ytmusic", inPlaylist: false, ["title": "Harder, Better, Faster, Stronger",
+        "track": "Harder, Better, Faster, Stronger", "artist": "Daft Punk", "album": "Discovery",
+        "track_number": 4, "release_year": 2001, "uploader": "Daft Punk - Topic", "channel": "Daft Punk - Topic"])
+    let t = readTags(runTagged("tags ytmusic", info: info) { $0.audioFormat = .mp3 }.outputFiles.first ?? "")
+    check(t["artist"] == "Daft Punk" && t["album"] == "Discovery" && t["track"].hasPrefix("4") && t["date"].hasPrefix("2001"),
+          "YouTube Music's own artist, album, track 4 and year 2001 are kept: \(describe(t))")
+}
+do {
+    let info = writeInfo("nodash", inPlaylist: false, ["title": "How Synthesizers Work [4K]", "uploader": "Tech Explained"])
+    let t = readTags(runTagged("tags nodash", info: info) { $0.audioFormat = .mp3 }.outputFiles.first ?? "")
+    check(t["title"] == "How Synthesizers Work" && t["artist"] == "Tech Explained",
+          "non-music titles are only cleaned, not split: \(describe(t))")
+}
+do {
+    let j = runTagged("tags genre", info: baseInfo) { $0.audioFormat = .mp3; $0.genre = "French House" }
+    check(readTags(j.outputFiles.first ?? "")["genre"] == "French House", "genre written (with a space in it)")
+}
+do {
+    let j = runTagged("tags names", info: baseInfo) { $0.audioFormat = .mp3; $0.filenameTemplate = .artistTitle }
+    let name = (j.outputFiles.first.map { ($0 as NSString).lastPathComponent }) ?? ""
+    check(name == "Daft Punk - Harder, Better, Faster, Stronger.mp3", "\u{201C}Artist - Song\u{201D} file name: \(name)")
+    let k = runTagged("tags library", info: baseInfo) { $0.audioFormat = .mp3; $0.filenameTemplate = .musicLibrary }
+    let rel = k.outputFiles.first?.replacingOccurrences(of: k.options.outputDirectory + "/", with: "") ?? ""
+    check(rel == "Daft Punk/Discovery/03 Harder, Better, Faster, Stronger.mp3", "music library path: \(rel)")
+}
+do {
+    let j = runTagged("tags off", info: baseInfo) { $0.audioFormat = .mp3; $0.musicTags = false }
+    let t = readTags(j.outputFiles.first ?? "")
+    check(t["title"] == "Daft Punk - Harder, Better, Faster, Stronger (Official Video)" && t["track"].isEmpty,
+          "turning music tags off restores the previous behavior")
+}
+
+section("Music tags: album split into chapter tracks")
+let albumInfo = writeInfo("album", inPlaylist: false, chapters: true, ["title": "Daft Punk - Discovery (Full Album)"])
+for format in [AudioFormat.mp3, .m4a, .flac, .opus, .vorbis] {
+    let j = runTagged("album \(format.rawValue)", info: albumInfo) { o in
+        o.audioFormat = format; o.splitChapters = true; o.chaptersInFolder = true
+    }
+    let tracks = Array(j.outputFiles.dropFirst()).sorted()   // first entry is the full-length file
+    let tags = tracks.map(readTags)
+    let titles = tags.map { $0["title"] }
+    let numbers = tags.map { $0["track"] }
+    let ok = j.status == .finished && titles == ["One More Time", "Aerodynamic", "Digital Love"] &&
+        numbers.map { $0.split(separator: "/").first.map(String.init) ?? "" } == ["1", "2", "3"] &&
+        tags.allSatisfy { $0["album"] == "Discovery" && $0["artist"] == "Daft Punk" && $0.squareCover }
+    check(ok, "\(format.rawValue.uppercased()): \(titles) tracks \(numbers), album \(tags.first?["album"] ?? "-"), covers square: \(tags.allSatisfy { $0.squareCover })",
+          "\(j.status.label) | \(tracks.map { ($0 as NSString).lastPathComponent }) | \(j.log.suffix(4))")
+}
+
+section("Settings saved by the previous version still load")
+do {
+    var saved = (try! JSONSerialization.jsonObject(with: JSONEncoder().encode(DownloadOptions()))) as! [String: Any]
+    for key in ["musicTags", "cleanTitles", "squareCover", "genre", "tagChapterTracks"] { saved.removeValue(forKey: key) }
+    saved["container"] = "mkv"; saved["audioFormat"] = "flac"; saved["mode"] = "retiredMode"
+    let loaded = OptionsStore.mergedWithDefaults(saved)
+    check(loaded?.container == .mkv && loaded?.audioFormat == .flac, "old values kept (MKV, FLAC)")
+    check(loaded?.musicTags == true && loaded?.squareCover == true, "new music options get their defaults")
+    check(loaded?.mode == .video, "an unreadable old value falls back to its default instead of wiping everything")
+}
+
 print("\n\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

@@ -56,6 +56,14 @@ conversion to SRT/VTT/ASS/LRC, and embedding.
 **Metadata & thumbnails** — embed tags and cover art, save the thumbnail
 (with JPG/PNG/WebP conversion), description, `.info.json` and comments.
 
+**Music tags** — on by default for audio downloads, so files sort properly in Apple Music,
+iTunes, VLC and other players. Cleans titles (“Official Video”, “Lyrics”, “[4K]”…),
+splits “Artist - Song” titles, strips “- Topic”/“VEVO” from channel names, numbers tracks
+by playlist position (“3 of 14”), fills in album, album artist and year, and crops the video
+thumbnail into a square cover. Official YouTube Music details are kept. When an album is split by
+chapters, every track gets its own title, number and cover. Optional genre, plus “Artist - Song”
+and “Artist / Album / 01 Song” file-name templates. Works with MP3, M4A, FLAC, Opus and Vorbis.
+
 **Trim** — download only a time range, with optional frame-accurate cuts.
 
 **Playlist** — single video vs whole playlist, item ranges like `1-5,8,-3::`, and a
@@ -117,5 +125,6 @@ Sources/YTDLPStudio/
   Services/ProcessRunner.swift  streaming process wrapper
   Services/ToolLocator.swift    finds yt-dlp / ffmpeg
   Services/MetadataFetcher.swift Analyze (yt-dlp -J)
+  Services/ChapterTagger.swift  per-track tags for split albums
   Views/…                       SwiftUI interface
 ```

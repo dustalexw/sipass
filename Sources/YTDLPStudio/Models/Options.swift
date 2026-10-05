@@ -426,7 +426,8 @@ enum CookieBrowser: String, OptionEnum {
 }
 
 enum FilenameTemplate: String, OptionEnum {
-    case titleOnly, titleID, uploaderTitle, dateTitle, uploaderFolder, playlistFolder, custom
+    case titleOnly, titleID, uploaderTitle, dateTitle, uploaderFolder, playlistFolder
+    case artistTitle, musicLibrary, custom
     var label: String {
         switch self {
         case .titleOnly: return "Title"
@@ -435,6 +436,8 @@ enum FilenameTemplate: String, OptionEnum {
         case .dateTitle: return "Upload date - Title"
         case .uploaderFolder: return "Channel folder / Title"
         case .playlistFolder: return "Playlist folder / Index - Title"
+        case .artistTitle: return "Artist - Song (music)"
+        case .musicLibrary: return "Artist / Album / 01 Song (music library)"
         case .custom: return "Custom…"
         }
     }
@@ -446,6 +449,9 @@ enum FilenameTemplate: String, OptionEnum {
         case .dateTitle: return "%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s"
         case .uploaderFolder: return "%(uploader)s/%(title)s.%(ext)s"
         case .playlistFolder: return "%(playlist_title|Singles)s/%(playlist_index&{} - |)s%(title)s.%(ext)s"
+        // meta_* fields are filled in by the music-tag rules; the fallbacks keep these working without them.
+        case .artistTitle: return "%(meta_artist,artist,uploader)s - %(meta_title,track,title)s.%(ext)s"
+        case .musicLibrary: return "%(meta_album_artist,album_artist,artist,uploader)s/%(meta_album,album,playlist_title,title)s/%(track_number,playlist_index&{:02d} |)s%(meta_title,track,title)s.%(ext)s"
         case .custom: return ""
         }
     }
@@ -513,6 +519,17 @@ struct DownloadOptions: Codable, Equatable {
     var writeInfoJSON = false
     var writeComments = false
 
+    // Music tags (audio players): fixes title/artist/album/track/year and cover art
+    var musicTags = true
+    var musicTagsOnVideo = false
+    var cleanTitles = true
+    var splitArtistTitle = true
+    var trackNumbers = true
+    var albumFallback = true
+    var squareCover = true
+    var tagChapterTracks = true
+    var genre = ""
+
     // Trim
     var trimEnabled = false
     var trimStart = "00:00:00"
@@ -550,6 +567,14 @@ struct DownloadOptions: Codable, Equatable {
     }
     var audioFiltersActive: Bool {
         normalizeAudio || volumeDB != 0 || sampleRate != .keep || channels != .keep
+    }
+    /// Music tagging is active for this download.
+    var musicTagsActive: Bool {
+        embedMetadata && musicTags && (mode == .audio || musicTagsOnVideo)
+    }
+    /// Chapter files will be retagged one by one after splitting.
+    var retagsChapters: Bool {
+        musicTagsActive && splitChapters && tagChapterTracks && mode == .audio
     }
     var archivePath: String {
         (outputDirectory as NSString).appendingPathComponent("yt-dlp-archive.txt")

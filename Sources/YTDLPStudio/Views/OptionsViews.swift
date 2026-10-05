@@ -301,6 +301,31 @@ struct MetadataOptionsView: View {
                     Warning("Cover art can't be embedded in this format, so it will be skipped.")
                 }
             }
+            Section("Music tags") {
+                Toggle("Fix tags for music players", isOn: $o.musicTags)
+                    .disabled(!o.embedMetadata)
+                Group {
+                    Toggle("Clean up titles (removes \u{201C}Official Video\u{201D}, \u{201C}Lyrics\u{201D}, \u{201C}[4K]\u{201D}\u{2026})", isOn: $o.cleanTitles)
+                    Toggle("Split \u{201C}Artist - Song\u{201D} titles into artist and song", isOn: $o.splitArtistTitle)
+                    Toggle("Number tracks by playlist position (e.g. 3 of 14)", isOn: $o.trackNumbers)
+                    Toggle("Fill in the album from the playlist name", isOn: $o.albumFallback)
+                    Toggle("Square cover art (crop the video thumbnail)", isOn: $o.squareCover)
+                        .disabled(o.mode != .audio)
+                    Toggle("Name and number each track when splitting chapters", isOn: $o.tagChapterTracks)
+                        .disabled(!o.splitChapters || o.mode != .audio)
+                    TextField("Genre", text: $o.genre, prompt: Text("Optional, e.g. Electronic"))
+                    Toggle("Also apply to video downloads", isOn: $o.musicTagsOnVideo)
+                        .disabled(o.mode == .audio)
+                }
+                .disabled(!o.embedMetadata || !o.musicTags)
+                if !o.embedMetadata {
+                    Hint("Turn on \u{201C}Embed metadata\u{201D} above to use music tags.")
+                } else if o.musicTags && o.mode != .audio && !o.musicTagsOnVideo {
+                    Hint("Music tags apply to Audio Only downloads unless \u{201C}Also apply to video downloads\u{201D} is on.")
+                } else if o.musicTags {
+                    Hint("Sets title, artist, album, album artist, year and track number so Apple Music, iTunes and other players sort your files properly. Official artist and album details from YouTube Music are kept. For matching file names, pick \u{201C}Artist - Song\u{201D} or \u{201C}Music library\u{201D} on the Output page. Singles use the song title as the album.")
+                }
+            }
             Section("Save alongside") {
                 Toggle("Save thumbnail image", isOn: $o.writeThumbnail)
                 EnumPicker(title: "Thumbnail format", selection: $o.thumbnailFormat)

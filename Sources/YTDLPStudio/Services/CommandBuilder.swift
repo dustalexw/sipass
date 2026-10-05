@@ -12,6 +12,7 @@ enum CommandBuilder {
                           urls: [String],
                           ffmpegLocation: String? = nil,
                           pathsFile: String? = nil,
+                          chaptersFile: String? = nil,
                           tempDirectory: String? = nil,
                           includeInternals: Bool = true) -> [String] {
         var a: [String] = []
@@ -21,6 +22,8 @@ enum CommandBuilder {
                   "download:\(progressPrefix)%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(info.title)s"]
             if let ff = ffmpegLocation { a += ["--ffmpeg-location", ff] }
             if let pf = pathsFile { a += ["--print-to-file", "after_move:filepath", pf] }
+            // Chapter titles + split file paths, so the app can tag each split track itself.
+            if let cf = chaptersFile { a += ["--print-to-file", "after_move:%(chapters)j", cf] }
             // Private scratch space per job, so two jobs that resolve to the same file name
             // can't overwrite each other's .part / .temp files mid-download.
             if let tmp = tempDirectory { a += ["-P", "temp:\(tmp)"] }
@@ -60,7 +63,15 @@ enum CommandBuilder {
 
         // Chapters
         if o.embedChapters { a.append("--embed-chapters") }
-        if o.splitChapters { a.append("--split-chapters") }
+        if o.splitChapters {
+            a.append("--split-chapters")
+            // Ogg (Opus/Vorbis) can't hold a picture stream, so splitting a file that already has
+            // embedded cover art fails. Drop the picture while splitting; the app re-adds it per track.
+            let oggLike: Set<AudioFormat> = [.opus, .vorbis, .best]
+            if o.mode == .audio && o.embedThumbnail && oggLike.contains(o.audioFormat) {
+                a += ["--postprocessor-args", "SplitChapters+ffmpeg_o:-map -0:v?"]
+            }
+        }
         if !o.removeChaptersRegex.trimmed.isEmpty { a += ["--remove-chapters", o.removeChaptersRegex.trimmed] }
 
         // SponsorBlock
@@ -86,10 +97,27 @@ enum CommandBuilder {
         if o.embedSubs && o.mode != .audio { a.append("--embed-subs") }
 
         // Metadata & thumbnails
-        if o.embedMetadata { a.append("--embed-metadata") }
+        if o.embedMetadata {
+            a.append("--embed-metadata")
+            if o.musicTagsActive { a += musicTagArgs(o) }
+            var metaArgs: [String] = []
+            // Ogg keeps tags per stream; stale tags from the source would override the new ones.
+            if o.mode == .audio { metaArgs += ["-map_metadata:s:a", "-1"] }
+            if o.musicTagsActive && !o.genre.trimmed.isEmpty { metaArgs += ["-metadata", "genre=\(o.genre.trimmed)"] }
+            if !metaArgs.isEmpty {
+                a += ["--postprocessor-args", "Metadata+ffmpeg_o:" + metaArgs.map(shellQuote).joined(separator: " ")]
+            }
+        }
         if o.embedThumbnail && o.thumbnailEmbeddable { a.append("--embed-thumbnail") }
         if o.writeThumbnail { a.append("--write-thumbnail") }
-        if o.thumbnailFormat != .original && (o.writeThumbnail || o.embedThumbnail) {
+        let squareCover = o.musicTagsActive && o.squareCover && o.mode == .audio &&
+            ((o.embedThumbnail && o.thumbnailEmbeddable) || o.writeThumbnail)
+        if squareCover {
+            // Crop the 16:9 video thumbnail to a centred square, like a real album cover.
+            // JPEG sources become PNG because yt-dlp skips conversion when the format already matches.
+            a += ["--convert-thumbnails", "jpg>png/jpg",
+                  "--postprocessor-args", "ThumbnailsConvertor+ffmpeg_o:-q:v 2 -vf crop=\"'min(iw,ih)':'min(iw,ih)'\""]
+        } else if o.thumbnailFormat != .original && (o.writeThumbnail || o.embedThumbnail) {
             a += ["--convert-thumbnails", o.thumbnailFormat.rawValue]
         }
         if o.writeDescription { a.append("--write-description") }
@@ -126,6 +154,36 @@ enum CommandBuilder {
         a += tokenize(o.extraArgs)
 
         if !urls.isEmpty { a.append("--"); a += urls }
+        return a
+    }
+
+    // MARK: - Music tags
+
+    /// Bracketed junk in video titles: "(Official Video)", "[Lyrics]", "(HD)", "(Full Album)"…
+    static let junkTitlePattern = #"(?i)\s*[\(\[][^\)\]]*\b(?:official|lyrics?|lyric video|audio|visuali[sz]er|music video|video|hd|hq|4k|remaster(?:ed)?(?: \d{4})?|full album|full ep|album stream)\b[^\)\]]*[\)\]]"#
+    /// "Artist - Song" (hyphen, en dash or em dash).
+    static let artistTitlePattern = #"^(.+?)\s+[-–—]\s+(.+)$"#
+
+    /// yt-dlp metadata rules, applied in order. Parsed values go into meta_* fields so tags
+    /// change but file names only change when a template asks for them. Each rule's pattern
+    /// requires at least one character, so a missing source field leaves the tag alone.
+    static func musicTagArgs(_ o: DownloadOptions) -> [String] {
+        var a: [String] = []
+        if o.cleanTitles {
+            a += ["--replace-in-metadata", "title,track", junkTitlePattern, ""]
+            a += ["--replace-in-metadata", "uploader,channel", #"(?i)\s*(?:-\s*topic|vevo|official)$"#, ""]
+        }
+        if o.splitArtistTitle {
+            a += ["--parse-metadata", #"title:^(?P<meta_artist>.+?)\s+[-–—]\s+(?P<meta_title>.+)$"#]
+        }
+        if o.trackNumbers {
+            a += ["--parse-metadata", #"%(track_number,playlist_index|)s/%(n_entries|)s:^(?P<meta_track>\d+(?:/\d+)?)"#]
+        }
+        if o.albumFallback {
+            a += ["--parse-metadata", #"%(album,playlist_title,meta_title,track,title|)s:^(?P<meta_album>.+)$"#]
+        }
+        a += ["--parse-metadata", #"%(album_artist,meta_artist,artist,uploader|)s:^(?P<meta_album_artist>.+)$"#]
+        a += ["--parse-metadata", #"%(release_year,upload_date|)s:^(?P<meta_date>\d{4})"#]
         return a
     }
 

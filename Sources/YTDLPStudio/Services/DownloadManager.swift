@@ -107,7 +107,8 @@ final class DownloadJob: ObservableObject, Identifiable {
         "ModifyChapters": "Cutting segments", "EmbedSubtitle": "Embedding subtitles",
         "FixupM3u8": "Fixing stream", "FixupM4a": "Fixing container",
         "FixupStretched": "Fixing aspect ratio", "ThumbnailsConvertor": "Converting thumbnail",
-        "SubtitlesConvertor": "Converting subtitles", "FFmpegConcat": "Concatenating"
+        "SubtitlesConvertor": "Converting subtitles", "FFmpegConcat": "Concatenating",
+        "MetadataParser": "Reading tags"
     ]
 
     func handleYtdlpLine(_ raw: String) {
@@ -245,6 +246,10 @@ final class DownloadManager: ObservableObject {
         let pathsFile = FileManager.default.temporaryDirectory
             .appendingPathComponent("ytdlp-studio-\(job.id.uuidString).paths").path
         try? FileManager.default.removeItem(atPath: pathsFile)
+        let chaptersFile: String? = job.options.retagsChapters
+            ? FileManager.default.temporaryDirectory.appendingPathComponent("ytdlp-studio-\(job.id.uuidString).chapters").path
+            : nil
+        if let cf = chaptersFile { try? FileManager.default.removeItem(atPath: cf) }
         try? FileManager.default.createDirectory(atPath: job.options.outputDirectory, withIntermediateDirectories: true)
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ytdlp-studio-\(job.id.uuidString)", isDirectory: true).path
@@ -252,7 +257,8 @@ final class DownloadManager: ObservableObject {
 
         let ffDir = job.tools.ffmpeg.map { ($0 as NSString).deletingLastPathComponent }
         let args = CommandBuilder.arguments(for: job.options, urls: [job.url],
-                                            ffmpegLocation: ffDir, pathsFile: pathsFile, tempDirectory: tempDir)
+                                            ffmpegLocation: ffDir, pathsFile: pathsFile,
+                                            chaptersFile: chaptersFile, tempDirectory: tempDir)
         job.appendLog("$ yt-dlp " + args.map(CommandBuilder.shellQuote).joined(separator: " "))
 
         let runner = ProcessRunner(executable: job.tools.ytdlp, arguments: args, environment: job.tools.environment)
@@ -260,7 +266,7 @@ final class DownloadManager: ObservableObject {
         runner.onExit = { [weak self, weak job] code in
             guard let self, let job else { return }
             try? FileManager.default.removeItem(atPath: tempDir)
-            self.ytdlpFinished(job, code: code, pathsFile: pathsFile)
+            self.ytdlpFinished(job, code: code, pathsFile: pathsFile, chaptersFile: chaptersFile)
         }
         job.runner = runner
 
@@ -272,16 +278,22 @@ final class DownloadManager: ObservableObject {
         }
     }
 
-    private func ytdlpFinished(_ job: DownloadJob, code: Int32, pathsFile: String) {
+    private func ytdlpFinished(_ job: DownloadJob, code: Int32, pathsFile: String, chaptersFile: String?) {
         job.runner = nil
+        let mainFiles = ((try? String(contentsOfFile: pathsFile, encoding: .utf8)) ?? "")
+            .split(separator: "\n").map(String.init).filter { !$0.trimmed.isEmpty }
         var files: [String] = []
-        if let text = try? String(contentsOfFile: pathsFile, encoding: .utf8) {
-            for line in text.split(separator: "\n").map(String.init) where !line.trimmed.isEmpty && !files.contains(line) {
-                files.append(line)
-            }
-        }
+        for line in mainFiles where !files.contains(line) { files.append(line) }
         try? FileManager.default.removeItem(atPath: pathsFile)
         job.outputFiles = files
+
+        // One chapters line per downloaded video, in the same order as the main files.
+        var chapterLines: [String] = []
+        if let cf = chaptersFile {
+            chapterLines = ((try? String(contentsOfFile: cf, encoding: .utf8)) ?? "")
+                .split(separator: "\n").map(String.init)
+            try? FileManager.default.removeItem(atPath: cf)
+        }
 
         if job.wasCancelled {
             job.status = .cancelled
@@ -292,6 +304,35 @@ final class DownloadManager: ObservableObject {
             let msg = job.lastError ?? "yt-dlp exited with code \(code)"
             job.status = files.isEmpty ? .failed(msg) : .warning(msg)
             if files.isEmpty { pump(); return }
+        }
+
+        if job.options.retagsChapters, let ffmpeg = job.tools.ffmpeg {
+            var groups: [(main: String?, tracks: [ChapterTagger.Track])] = []
+            for (i, line) in chapterLines.enumerated() {
+                let tracks = ChapterTagger.tracks(fromChaptersJSON: line, options: job.options)
+                if tracks.isEmpty { continue }
+                let main: String? = i < mainFiles.count ? mainFiles[i] : nil
+                groups.append((main: main, tracks: tracks))
+            }
+            let tagGroups = groups
+            if !groups.isEmpty {
+                job.status = .processing("Tagging tracks")
+                let env = job.tools.environment
+                Task {
+                    var collected: [String] = []
+                    for g in tagGroups {
+                        collected += await ChapterTagger.retag(g.tracks, mainFile: g.main, ffmpeg: ffmpeg, environment: env)
+                    }
+                    let lines = collected
+                    let trackPaths = tagGroups.flatMap { $0.tracks.map(\.path) }
+                    DispatchQueue.main.async {
+                        lines.forEach(job.appendLog)
+                        for p in trackPaths where !job.outputFiles.contains(p) { job.outputFiles.append(p) }
+                        if job.wasCancelled { job.status = .cancelled; self.pump() } else { self.complete(job) }
+                    }
+                }
+                return
+            }
         }
 
         let videoExts: Set<String> = ["mp4", "mkv", "webm", "mov", "avi", "flv", "m4v"]
