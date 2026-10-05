@@ -4,6 +4,11 @@ A native SwiftUI front end for **yt-dlp** and **FFmpeg** on macOS. Every major y
 feature is a checkbox, picker or slider, and the exact command is shown live at the
 bottom of the window so you can copy it into Terminal.
 
+Version 2.0 introduces a bespoke psychedelic space icon, with an iridescent orbital
+form, a subtle central YouTube play mark, and an integrated download arrow. The
+1024px source is in `Assets/AppIcon.png`; `AppIcon.icns` contains the native macOS
+icon sizes used by the app bundle.
+
 ## Requirements
 
 - macOS 13 Ventura or later (Apple Silicon or Intel)
