@@ -502,6 +502,7 @@ struct DownloadOptions: Codable, Equatable {
     var removeChaptersRegex = ""
     var sponsorBlockMode: SponsorBlockMode = .off
     var sponsorCategories: [SponsorCategory] = [.sponsor, .selfpromo, .interaction]
+    var preciseCuts = true
 
     // Subtitles
     var writeSubs = false
@@ -567,6 +568,14 @@ struct DownloadOptions: Codable, Equatable {
     }
     var audioFiltersActive: Bool {
         normalizeAudio || volumeDB != 0 || sampleRate != .keep || channels != .keep
+    }
+    /// Segments are cut out of a video (SponsorBlock or chapter removal). Without keyframes at the
+    /// cuts, stream-copied video restarts at the previous keyframe and replays or freezes footage.
+    var cutsVideoSegments: Bool {
+        mode != .audio && (sponsorBlockMode == .remove || !removeChaptersRegex.trimmed.isEmpty)
+    }
+    var forcesKeyframes: Bool {
+        (trimEnabled && forceKeyframes) || (cutsVideoSegments && preciseCuts)
     }
     /// Music tagging is active for this download.
     var musicTagsActive: Bool {

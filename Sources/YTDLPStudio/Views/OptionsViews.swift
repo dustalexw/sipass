@@ -253,6 +253,14 @@ struct ChaptersOptionsView: View {
                          ? "Selected segments are cut out with FFmpeg. Segment data comes from the community-run SponsorBlock database (YouTube only)."
                          : "Selected segments are added as named chapters so you can skip them in your player.")
                 }
+                if o.cutsVideoSegments {
+                    Toggle("Cut precisely (prevents repeated or frozen video at cuts)", isOn: $o.preciseCuts)
+                    if o.preciseCuts {
+                        Hint("The video is re-encoded once so every cut lands on an exact frame. This takes extra time, roughly the length of the video at 1080p.")
+                    } else {
+                        Warning("Without precise cuts the video can jump back and replay several seconds, or freeze, at each cut while the audio carries on.")
+                    }
+                }
             }
         }
         .formStyle(.grouped)

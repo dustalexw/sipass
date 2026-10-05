@@ -58,8 +58,8 @@ enum CommandBuilder {
             let start = o.trimStart.trimmed.isEmpty ? "0" : o.trimStart.trimmed
             let end = o.trimEnd.trimmed.isEmpty ? "inf" : o.trimEnd.trimmed
             a += ["--download-sections", "*\(start)-\(end)"]
-            if o.forceKeyframes { a.append("--force-keyframes-at-cuts") }
         }
+        if o.forcesKeyframes { a.append("--force-keyframes-at-cuts") }
 
         // Chapters
         if o.embedChapters { a.append("--embed-chapters") }

@@ -436,5 +436,65 @@ do {
     check(loaded?.mode == .video, "an unreadable old value falls back to its default instead of wiping everything")
 }
 
+
+// MARK: - 7. Cutting segments out (SponsorBlock "Cut out", remove chapters)
+
+section("Cutting segments out of a video")
+do {
+    // Same cutting path SponsorBlock uses; SponsorBlock's own servers aren't reachable here.
+    var info: [String: Any] = [
+        "id": "sb1", "title": "Kill Count", "uploader": "Test", "upload_date": "20240101", "duration": 30,
+        "webpage_url": "http://127.0.0.1:8766/w", "extractor": "generic", "extractor_key": "Generic", "_type": "video",
+        "formats": [["format_id": "18", "url": "http://127.0.0.1:8766/longgop.mp4", "ext": "mp4",
+                     "vcodec": "h264", "acodec": "aac", "protocol": "http"]],
+        "chapters": [["start_time": 0, "end_time": 12, "title": "Part one"],
+                     ["start_time": 12, "end_time": 16, "title": "Sponsor"],
+                     ["start_time": 16, "end_time": 30, "title": "Part two"]]]
+    info["thumbnails"] = []
+    let path = infoDir + "/sponsor.info.json"
+    _ = FileManager.default.createFile(atPath: path, contents: try! JSONSerialization.data(withJSONObject: info))
+
+    var sb = DownloadOptions(); sb.sponsorBlockMode = .remove
+    check(CommandBuilder.arguments(for: sb, urls: ["u"]).contains("--force-keyframes-at-cuts"),
+          "SponsorBlock \u{201C}Cut out\u{201D} uses precise cuts by default")
+    sb.mode = .audio
+    check(!CommandBuilder.arguments(for: sb, urls: ["u"]).contains("--force-keyframes-at-cuts"),
+          "audio-only downloads skip the re-encode (audio cuts are exact anyway)")
+
+    /// Frame times (seconds) where the picture jumps backwards: footage being replayed.
+    func backwardJumps(_ file: String) -> [Double] {
+        // Brightness profile per frame of a moving test pattern; a replay shows as times going backwards
+        // when each output frame is matched to the source frame it shows.
+        func frames(_ f: String) -> [[UInt8]] {
+            let r = runSync("/bin/sh", ["-c", "ffmpeg -loglevel error -i '\(f)' -vf fps=5,scale=64:36,format=gray -f rawvideo - | od -An -v -tu1"])
+            let bytes = r.stdout.split(whereSeparator: { $0 == " " || $0 == "\n" }).compactMap { UInt8($0) }
+            let size = 64 * 36
+            return stride(from: 0, to: bytes.count - size + 1, by: size).map { Array(bytes[$0..<$0 + size]) }
+        }
+        let src = frames("/tmp/srv/longgop.mp4".replacingOccurrences(of: "/tmp/srv", with: ProcessInfo.processInfo.environment["SRV"] ?? "/tmp/srv"))
+        let out = frames(file)
+        guard !src.isEmpty, !out.isEmpty else { return [-1] }
+        let times = out.map { o -> Double in
+            let best = src.indices.min { a, b in
+                zip(src[a], o).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) } < zip(src[b], o).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+            }!
+            return Double(best) / 5
+        }
+        return times.indices.dropFirst().filter { times[$0] < times[$0 - 1] - 0.5 }.map { Double($0) / 5 }
+    }
+
+    let precise = run("cut precise") { o in
+        o.extraArgs = "--load-info-json \(CommandBuilder.shellQuote(path))"; o.removeChaptersRegex = "Sponsor"
+    }
+    let preciseJumps = backwardJumps(precise.outputFiles.first ?? "")
+    check(precise.status == .finished && preciseJumps.isEmpty, "precise cut plays straight through (no replayed footage)", "jumps at \(preciseJumps) \(precise.status.label)")
+
+    let copy = run("cut copy") { o in
+        o.extraArgs = "--load-info-json \(CommandBuilder.shellQuote(path))"; o.removeChaptersRegex = "Sponsor"; o.preciseCuts = false
+    }
+    let copyJumps = backwardJumps(copy.outputFiles.first ?? "")
+    check(!copyJumps.isEmpty, "control: without precise cuts the replay bug appears (jumps back at \(copyJumps.prefix(3))s)")
+}
+
 print("\n\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)
