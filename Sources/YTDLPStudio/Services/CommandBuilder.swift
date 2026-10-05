@@ -161,6 +161,15 @@ enum CommandBuilder {
 
     /// Bracketed junk in video titles: "(Official Video)", "[Lyrics]", "(HD)", "(Full Album)"…
     static let junkTitlePattern = #"(?i)\s*[\(\[][^\)\]]*\b(?:official|lyrics?|lyric video|audio|visuali[sz]er|music video|video|hd|hq|4k|remaster(?:ed)?(?: \d{4})?|full album|full ep|album stream)\b[^\)\]]*[\)\]]"#
+    /// A leading track number: "01.", "1 -", "03 ", "[04]", "(5)", "#6 -", "Track 7 -", "8)", "09:".
+    /// Deliberately strict so real titles that start with a number survive ("7 Rings",
+    /// "99 Luftballons", "4:44", "1-800-273-8255", "2 Become 1", "1999"). No anchors or flags,
+    /// so it can be embedded in larger patterns.
+    static let leadingTrackNumber = #"(?:(?:track|no\.?)\s*)?(?:#?\d{1,3}\s*[.:)\-–—](?!\d)\s*|[\[(]\d{1,3}[\])]\s*|0\d\s+)"#
+    /// Captures the title without its leading track number into the named group.
+    static func numberStrippingPattern(into group: String) -> String {
+        #"(?i)^\s*(?:"# + leadingTrackNumber + #")?(?P<"# + group + #">.+?)\s*$"#
+    }
     /// "Artist - Song" (hyphen, en dash or em dash).
     static let artistTitlePattern = #"^(.+?)\s+[-–—]\s+(.+)$"#
 
@@ -173,8 +182,19 @@ enum CommandBuilder {
             a += ["--replace-in-metadata", "title,track", junkTitlePattern, ""]
             a += ["--replace-in-metadata", "uploader,channel", #"(?i)\s*(?:-\s*topic|vevo|official)$"#, ""]
         }
+        // Strip track numbers before splitting, or "01 - Song" would make the artist "01".
+        // studio_title is a scratch field: it isn't meta_*, so it is never written into the file.
+        var splitSource = "title"
+        if o.stripTitleNumbers {
+            a += ["--parse-metadata", "title:" + numberStrippingPattern(into: "studio_title")]
+            splitSource = "studio_title"
+        }
         if o.splitArtistTitle {
-            a += ["--parse-metadata", #"title:^(?P<meta_artist>.+?)\s+[-–—]\s+(?P<meta_title>.+)$"#]
+            a += ["--parse-metadata", splitSource + #":^(?P<meta_artist>.+?)\s+[-–—]\s+(?P<meta_title>.+)$"#]
+        }
+        if o.stripTitleNumbers {
+            // Catches numbers after the artist ("Artist - 03. Song") and in YouTube Music's own track field.
+            a += ["--parse-metadata", "%(meta_title,track,studio_title|)s:" + numberStrippingPattern(into: "meta_title")]
         }
         if o.trackNumbers {
             a += ["--parse-metadata", #"%(track_number,playlist_index|)s/%(n_entries|)s:^(?P<meta_track>\d+(?:/\d+)?)"#]

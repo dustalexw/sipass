@@ -314,6 +314,7 @@ struct MetadataOptionsView: View {
                     .disabled(!o.embedMetadata)
                 Group {
                     Toggle("Clean up titles (removes \u{201C}Official Video\u{201D}, \u{201C}Lyrics\u{201D}, \u{201C}[4K]\u{201D}\u{2026})", isOn: $o.cleanTitles)
+                    Toggle("Remove track numbers from song titles (\u{201C}01. Song\u{201D} \u{2192} \u{201C}Song\u{201D})", isOn: $o.stripTitleNumbers)
                     Toggle("Split \u{201C}Artist - Song\u{201D} titles into artist and song", isOn: $o.splitArtistTitle)
                     Toggle("Number tracks by playlist position (e.g. 3 of 14)", isOn: $o.trackNumbers)
                     Toggle("Fill in the album from the playlist name", isOn: $o.albumFallback)

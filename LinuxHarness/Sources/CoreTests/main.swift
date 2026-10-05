@@ -496,5 +496,51 @@ do {
     check(!copyJumps.isEmpty, "control: without precise cuts the replay bug appears (jumps back at \(copyJumps.prefix(3))s)")
 }
 
+
+// MARK: - 8. Track numbers in titles
+
+section("Track numbers removed from song titles")
+do {
+    let numbered = ["01. One More Time", "1 - Aerodynamic", "03 Digital Love", "[04] Harder, Better, Faster, Stronger",
+                    "(5) Crescendolls", "#6 - Nightvision", "Track 7 - Superheroes", "8) High Life",
+                    "09: Something About Us", "10 \u{2013} Voyager", "11.Veridis Quo", "12 \u{2014} Short Circuit", "track 13: Face to Face"]
+    let bad = numbered.filter { t in let r = ChapterTagger.stripTrackNumber(t); return r == t || r.first?.isNumber == true }
+    check(bad.isEmpty, "all \(numbered.count) numbering styles removed (\u{201C}01. One More Time\u{201D} \u{2192} \u{201C}\(ChapterTagger.stripTrackNumber("01. One More Time"))\u{201D})", "\(bad)")
+    let real = ["7 Rings", "99 Luftballons", "1999", "2 Become 1", "4:44", "1-800-273-8255", "9 to 5", "21 Guns",
+                "1.5 Seconds", "50 Ways to Leave Your Lover", "22", "007 (Shanty Town)", "Notorious", "No Scrubs",
+                "10,000 Hours", "3 Libras", "1 Thing"]
+    let changed = real.filter { ChapterTagger.stripTrackNumber($0) != $0 }
+    check(changed.isEmpty, "all \(real.count) titles that really start with a number are untouched (7 Rings, 4:44, 1999\u{2026})", "\(changed)")
+
+    func tagsFor(_ name: String, _ over: [String: Any], playlist: Bool = false) -> Tags {
+        let info = writeInfo(name, inPlaylist: playlist, over)
+        return readTags(runTagged(name, info: info) { $0.audioFormat = .mp3 }.outputFiles.first ?? "")
+    }
+    let t1 = tagsFor("num lead", ["title": "01 - One More Time", "uploader": "Daft Punk - Topic", "channel": "Daft Punk - Topic"], playlist: true)
+    check(t1["title"] == "One More Time" && t1["artist"] == "Daft Punk", "\u{201C}01 - One More Time\u{201D}: title \u{201C}\(t1["title"])\u{201D}, artist \u{201C}\(t1["artist"])\u{201D} (not \u{201C}01\u{201D})")
+    let t2 = tagsFor("num after artist", ["title": "Daft Punk - 03. Digital Love (Official Audio)"])
+    check(t2["title"] == "Digital Love" && t2["artist"] == "Daft Punk", "\u{201C}Daft Punk - 03. Digital Love (Official Audio)\u{201D}: \(describe(t2))")
+    let t3 = tagsFor("num real", ["title": "7 Rings", "uploader": "Ariana Grande"])
+    check(t3["title"] == "7 Rings", "\u{201C}7 Rings\u{201D} keeps its number")
+    let t4 = tagsFor("num ytm", ["title": "Harder, Better, Faster, Stronger", "track": "04 Harder, Better, Faster, Stronger", "artist": "Daft Punk"])
+    check(t4["title"] == "Harder, Better, Faster, Stronger", "YouTube Music track field \u{201C}04 Harder\u{2026}\u{201D} cleaned too")
+
+    var chaptered = writeInfo("num chapters", inPlaylist: false, chapters: true, ["title": "Daft Punk - Discovery (Full Album)"])
+    if var d = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: chaptered)))) as? [String: Any] {
+        d["chapters"] = [["start_time": 0, "end_time": 7, "title": "01. One More Time"],
+                         ["start_time": 7, "end_time": 14, "title": "02 - Aerodynamic"],
+                         ["start_time": 14, "end_time": 20, "title": "[03] Digital Love"]]
+        chaptered = infoDir + "/num-chapters2.info.json"
+        _ = FileManager.default.createFile(atPath: chaptered, contents: try! JSONSerialization.data(withJSONObject: d))
+    }
+    let j = runTagged("num split", info: chaptered) { o in o.audioFormat = .mp3; o.splitChapters = true }
+    let titles = Array(j.outputFiles.dropFirst()).sorted().map { readTags($0)["title"] }
+    check(titles == ["One More Time", "Aerodynamic", "Digital Love"], "split album chapters \u{201C}01. \u{2026}\u{201D}, \u{201C}02 - \u{2026}\u{201D}, \u{201C}[03] \u{2026}\u{201D} \u{2192} \(titles)")
+
+    let k = runTagged("num toggle off", info: writeInfo("num toggle", ["title": "Song Title 01", "uploader": "X"])) { o in
+        o.audioFormat = .mp3; o.stripTitleNumbers = false }
+    check(k.status == .finished, "turning the option off still downloads normally")
+}
+
 print("\n\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

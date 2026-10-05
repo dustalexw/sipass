@@ -524,6 +524,7 @@ struct DownloadOptions: Codable, Equatable {
     var musicTags = true
     var musicTagsOnVideo = false
     var cleanTitles = true
+    var stripTitleNumbers = true
     var splitArtistTitle = true
     var trackNumbers = true
     var albumFallback = true

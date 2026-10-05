@@ -22,9 +22,10 @@ enum ChapterTagger {
             var title = (chapter["title"] as? String) ?? ""
             var artist: String?
             if o.cleanTitles { title = clean(title) }
+            if o.stripTitleNumbers { title = stripTrackNumber(title) }
             if o.splitArtistTitle, let pair = splitArtist(title) {
                 artist = pair.artist
-                title = pair.title
+                title = o.stripTitleNumbers ? stripTrackNumber(pair.title) : pair.title
             }
             if title.isEmpty {
                 title = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
@@ -37,6 +38,17 @@ enum ChapterTagger {
         guard let re = try? NSRegularExpression(pattern: CommandBuilder.junkTitlePattern) else { return title }
         let range = NSRange(title.startIndex..., in: title)
         return re.stringByReplacingMatches(in: title, range: range, withTemplate: "").trimmed
+    }
+
+    /// "01. One More Time" -> "One More Time"; "7 Rings" stays "7 Rings".
+    static func stripTrackNumber(_ title: String) -> String {
+        // ICU (Foundation) uses (?<name>...) for named groups; Python also accepts (?P<name>...).
+        let pattern = CommandBuilder.numberStrippingPattern(into: "t").replacingOccurrences(of: "(?P<", with: "(?<")
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: title, range: NSRange(title.startIndex..., in: title)),
+              let r = Range(m.range(withName: "t"), in: title) else { return title }
+        let stripped = String(title[r]).trimmed
+        return stripped.isEmpty ? title : stripped
     }
 
     static func splitArtist(_ title: String) -> (artist: String, title: String)? {
