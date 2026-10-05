@@ -99,7 +99,78 @@ try {
     bool childGone = childPid < 0; try { using var child = Process.GetProcessById(childPid); childGone = child.HasExited; } catch (ArgumentException) { childGone = true; }
     Check(childGone, "Cancellation terminates the process tree");
     Environment.SetEnvironmentVariable("YTDLP_FIXTURE_SLOW", null);
+    Environment.SetEnvironmentVariable("YTDLP_FIXTURE_METADATA", null);
+    var video = Path.Combine(work, "source-video.mp4");
+    var videoResult = await ProcessRunner.RunAsync(real.Ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25:duration=6", "-f", "lavfi", "-i", "sine=frequency=330:duration=6", "-c:v", "libx264", "-c:a", "aac", "-shortest", video]);
+    Check(videoResult.ExitCode == 0, "Creates video and audio integration clip");
+    var videoOptions = new DownloadOptions { OutputDirectory = Path.Combine(work, "encoded"), EmbedThumbnail = false, EncodeEnabled = true, Encoder = "libx264", ExtraArgs = "--enable-file-urls", Crf = 25 };
+    var videoQueue = new DownloadQueue(real); videoQueue.Enqueue([new Uri(video).AbsoluteUri], videoOptions);
+    var videoJob = videoQueue.Jobs[0]; await videoJob.Completion.WaitAsync(TimeSpan.FromSeconds(60));
+    Check(videoJob.State == JobState.Finished && videoJob.OutputFiles.Length == 2, "Video download and separate encoding: " + videoJob.Stage);
+    if (videoJob.State != JobState.Finished) Console.WriteLine(string.Join('\n', videoJob.Log));
+    var encodedPath = videoJob.OutputFiles.FirstOrDefault(p => p.Contains(".encoded."));
+    if (encodedPath != null) {
+        var probe = await ProcessRunner.RunAsync(real.Ffprobe, ["-v", "error", "-show_streams", "-of", "json", encodedPath]);
+        var streams = JsonNode.Parse(probe.Stdout)!["streams"]!.AsArray();
+        Check(streams.OfType<JsonObject>().Any(s => CommentChapters.Text(s["codec_name"]) == "h264"), "Encoded H.264 verified with ffprobe");
+    }
+    var trimOptions = new DownloadOptions { Mode = "audio", AudioFormat = "flac", EmbedThumbnail = false, NormalizeAudio = true, Channels = "mono", SampleRate = "r48000", TrimEnabled = true, TrimStart = "1", TrimEnd = "4", ForceKeyframes = true, OutputDirectory = Path.Combine(work, "trim"), ExtraArgs = "--enable-file-urls" };
+    using var mediaServer = new LocalMediaServer(video);
+    var trimQueue = new DownloadQueue(real); trimQueue.Enqueue([mediaServer.Url], trimOptions);
+    var trimJob = trimQueue.Jobs[0]; await trimJob.Completion.WaitAsync(TimeSpan.FromSeconds(60));
+    Check(trimJob.State == JobState.Finished, "Audio trim, normalization, sample rate and mono: " + trimJob.Stage);
+    if (trimJob.State != JobState.Finished) Console.WriteLine(string.Join('\n', trimJob.Log));
+    if (trimJob.OutputFiles.FirstOrDefault() is { } trimmed) {
+        var probe = await ProcessRunner.RunAsync(real.Ffprobe, ["-v", "error", "-show_streams", "-show_format", "-of", "json", trimmed]);
+        var info = JsonNode.Parse(probe.Stdout)!; var stream = info["streams"]![0]!;
+        Check(CommentChapters.Text(stream["codec_name"]) == "flac" && CommentChapters.Number(stream["channels"]) == 1 && CommentChapters.Number(stream["sample_rate"]) == 48000, "Audio codec, channels and sample rate verified with ffprobe");
+        Check(Math.Abs(CommentChapters.Number(info["format"]!["duration"]) - 3) < 0.2, "Trim duration verified with ffprobe");
+    }
+
 } catch (Exception error) { failed++; Console.Error.WriteLine(error); }
 finally { try { Directory.Delete(work, true); } catch (IOException) { } }
 Console.WriteLine($"{passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;
+
+// A loopback HTTP source lets yt-dlp exercise its real partial-download/FFmpeg path.
+sealed class LocalMediaServer : IDisposable {
+    readonly System.Net.Sockets.TcpListener listener = new(System.Net.IPAddress.Loopback, 0);
+    readonly CancellationTokenSource cancellation = new();
+    readonly byte[] media;
+    public string Url { get; }
+    public LocalMediaServer(string path) {
+        media = File.ReadAllBytes(path); listener.Start();
+        Url = $"http://127.0.0.1:{((System.Net.IPEndPoint)listener.LocalEndpoint).Port}/source-video.mp4";
+        _ = Serve();
+    }
+    async Task Serve() {
+        try {
+            while (!cancellation.IsCancellationRequested) {
+                var client = await listener.AcceptTcpClientAsync(cancellation.Token);
+                _ = Respond(client);
+            }
+        } catch (OperationCanceledException) { } catch (System.Net.Sockets.SocketException) when (cancellation.IsCancellationRequested) { }
+    }
+    async Task Respond(System.Net.Sockets.TcpClient client) {
+        using (client) {
+            try {
+                var stream = client.GetStream();
+                using var reader = new StreamReader(stream, System.Text.Encoding.ASCII, false, 1024, leaveOpen: true);
+                var request = await reader.ReadLineAsync(cancellation.Token) ?? "";
+                long start = 0, end = media.Length - 1; bool partial = false;
+                while (await reader.ReadLineAsync(cancellation.Token) is { Length: > 0 } line) {
+                    if (!line.StartsWith("Range: bytes=", StringComparison.OrdinalIgnoreCase)) continue;
+                    var range = line[13..].Split('-');
+                    if (long.TryParse(range[0], out var offset)) { start = offset; partial = true; }
+                    if (range.Length > 1 && long.TryParse(range[1], out var limit)) end = Math.Min(end, limit);
+                }
+                start = Math.Clamp(start, 0, end); long length = end - start + 1;
+                var header = $"HTTP/1.1 {(partial ? "206 Partial Content" : "200 OK")}\r\nContent-Type: video/mp4\r\nAccept-Ranges: bytes\r\nContent-Length: {length}\r\nConnection: close\r\n";
+                if (partial) header += $"Content-Range: bytes {start}-{end}/{media.Length}\r\n";
+                await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(header + "\r\n"), cancellation.Token);
+                if (!request.StartsWith("HEAD ")) await stream.WriteAsync(media.AsMemory((int)start, (int)length), cancellation.Token);
+            } catch (IOException) { } catch (OperationCanceledException) { }
+        }
+    }
+    public void Dispose() { cancellation.Cancel(); listener.Stop(); cancellation.Dispose(); }
+}

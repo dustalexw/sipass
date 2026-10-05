@@ -27,6 +27,7 @@ public sealed class MainForm : Form {
         queue = new(tools, path => Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(path, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin));
         options = new OptionsPanel(OptionsChanged);
         Text = "YT-DLP Studio 2.1 — Windows"; Font = new Font("Segoe UI", 10); Size = new Size(1280, 820); MinimumSize = new Size(1080, 680); StartPosition = FormStartPosition.CenterScreen;
+        KeyPreview = true;
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(12) };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); root.RowStyles.Add(new RowStyle(SizeType.Absolute, 110)); root.RowStyles.Add(new RowStyle(SizeType.Absolute, 26)); Controls.Add(root);
@@ -168,6 +169,12 @@ public sealed class MainForm : Form {
     string? Prompt(string title, string label) {
         using var dialog = new Form { Text = title, Size = new Size(380, 170), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = Font };
         var text = new TextBox { Left = 20, Top = 45, Width = 320 }; var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, Left = 250, Top = 85, Width = 90 }; dialog.Controls.AddRange([new Label { Text = label, Left = 20, Top = 18, AutoSize = true }, text, ok]); dialog.AcceptButton = ok; return dialog.ShowDialog(this) == DialogResult.OK ? text.Text : null;
+    }
+    protected override bool ProcessCmdKey(ref Message message, Keys keys) {
+        if (keys == (Keys.Control | Keys.Enter)) { if (download.Enabled) StartDownload(); return true; }
+        if (keys == (Keys.Control | Keys.I)) { if (analyze.Enabled) _ = AnalyzeAsync(); return true; }
+        if (keys == (Keys.Control | Keys.L)) { urls.Focus(); urls.SelectAll(); return true; }
+        return base.ProcessCmdKey(ref message, keys);
     }
     protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); searchCancellation?.Cancel(); } base.Dispose(disposing); }
 }
