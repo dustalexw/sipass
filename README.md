@@ -1,14 +1,28 @@
-# YT-DLP Studio
+<p align="center">
+  <img src="Assets/readme-header.png" alt="YT-DLP Studio — Every yt-dlp and FFmpeg feature, in a native desktop app" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dustalexw/ytdlp-studio?style=for-the-badge&color=7e6eff&labelColor=1a1033"></a>
+  <a href="https://github.com/dustalexw/ytdlp-studio/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/dustalexw/ytdlp-studio/build.yml?branch=main&style=for-the-badge&label=build&labelColor=1a1033"></a>
+  <img alt="Platforms: macOS and Windows" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-e650dc?style=for-the-badge&labelColor=1a1033">
+</p>
+
+<p align="center">
+  <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><b>Download for macOS</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><b>Download for Windows</b></a>
+</p>
 
 A native desktop front end for **yt-dlp** and **FFmpeg**, with SwiftUI on macOS
 and Windows Forms on Windows. Every major yt-dlp
 feature is a checkbox, picker or slider, and the exact command is shown live at the
 bottom of the window so you can copy it into Terminal.
 
-Version 2.0 introduces a bespoke psychedelic space icon, with an iridescent orbital
-form, a subtle central YouTube play mark, and an integrated download arrow. The
+The bespoke psychedelic space icon, with an iridescent orbital form, a subtle central
+YouTube play mark, and an integrated download arrow, ships on both platforms. The
 1024px source is in `Assets/AppIcon.png`; `AppIcon.icns` contains the native macOS
-icon sizes used by the app bundle.
+icon sizes and `Windows/App/AppIcon.ico` the Windows ones.
 
 ## Windows portable edition
 
