@@ -1,0 +1,262 @@
+import Foundation
+
+enum CommandBuilder {
+    static let progressPrefix = "[[PROG]]"
+
+    // MARK: - yt-dlp
+
+    /// Builds the yt-dlp argument list.
+    /// - Parameter includeInternals: include the plumbing the app needs (progress template, ffmpeg path,
+    ///   output-path capture). Off for the copyable preview.
+    static func arguments(for o: DownloadOptions,
+                          urls: [String],
+                          ffmpegLocation: String? = nil,
+                          pathsFile: String? = nil,
+                          tempDirectory: String? = nil,
+                          includeInternals: Bool = true) -> [String] {
+        var a: [String] = []
+
+        if includeInternals {
+            a += ["--newline", "--no-colors", "--progress", "--progress-template",
+                  "download:\(progressPrefix)%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(info.title)s"]
+            if let ff = ffmpegLocation { a += ["--ffmpeg-location", ff] }
+            if let pf = pathsFile { a += ["--print-to-file", "after_move:filepath", pf] }
+            // Private scratch space per job, so two jobs that resolve to the same file name
+            // can't overwrite each other's .part / .temp files mid-download.
+            if let tmp = tempDirectory { a += ["-P", "temp:\(tmp)"] }
+        }
+
+        // Format selection
+        let custom = o.customFormat.trimmed
+        switch o.mode {
+        case .audio:
+            a += ["-f", custom.isEmpty ? "ba/b" : custom]
+            if let s = sortString(o) { a += ["-S", s] }
+            a += ["-x", "--audio-format", o.audioFormat.rawValue]
+            if !o.audioFormat.isLossless { a += ["--audio-quality", o.audioQuality.arg] }
+            let af = audioFilterArgs(o)
+            if !af.isEmpty && o.audioFormat != .best {
+                a += ["--postprocessor-args", "ExtractAudio+ffmpeg_o:" + af.joined(separator: " ")]
+            }
+        case .video, .videoOnly:
+            // Video-only falls back to the combined stream on sites that don't offer a separate video track.
+            let fallback = o.mode == .video ? "bv*+ba/b" : "bv/bv*"
+            a += ["-f", custom.isEmpty ? fallback : custom]
+            if let s = sortString(o) { a += ["-S", s] }
+            if o.mode == .video { a += ["--merge-output-format", o.container.rawValue] }
+            if o.forceRemux { a += ["--remux-video", o.container.remuxRule] }
+            if o.preferFreeFormats { a.append("--prefer-free-formats") }
+        }
+        if o.keepIntermediateFiles { a.append("-k") }
+        if !o.customPPA.trimmed.isEmpty { a += ["--postprocessor-args", o.customPPA.trimmed] }
+
+        // Trim / sections
+        if o.trimEnabled {
+            let start = o.trimStart.trimmed.isEmpty ? "0" : o.trimStart.trimmed
+            let end = o.trimEnd.trimmed.isEmpty ? "inf" : o.trimEnd.trimmed
+            a += ["--download-sections", "*\(start)-\(end)"]
+            if o.forceKeyframes { a.append("--force-keyframes-at-cuts") }
+        }
+
+        // Chapters
+        if o.embedChapters { a.append("--embed-chapters") }
+        if o.splitChapters { a.append("--split-chapters") }
+        if !o.removeChaptersRegex.trimmed.isEmpty { a += ["--remove-chapters", o.removeChaptersRegex.trimmed] }
+
+        // SponsorBlock
+        switch o.sponsorBlockMode {
+        case .off: break
+        case .mark:
+            let cats = o.sponsorCategories.map(\.rawValue)
+            if !cats.isEmpty { a += ["--sponsorblock-mark", cats.joined(separator: ",")] }
+        case .remove:
+            let cats = o.sponsorCategories.filter(\.removable).map(\.rawValue)
+            if !cats.isEmpty { a += ["--sponsorblock-remove", cats.joined(separator: ",")] }
+        }
+
+        // Subtitles
+        if o.writeSubs { a.append("--write-subs") }
+        if o.writeAutoSubs { a.append("--write-auto-subs") }
+        if o.writeSubs || o.writeAutoSubs || o.embedSubs {
+            a += ["--sub-langs", o.subLangs.trimmed.isEmpty ? "en.*" : o.subLangs.trimmed]
+            if o.subFormat != .best {
+                a += ["--sub-format", "\(o.subFormat.rawValue)/best", "--convert-subs", o.subFormat.rawValue]
+            }
+        }
+        if o.embedSubs && o.mode != .audio { a.append("--embed-subs") }
+
+        // Metadata & thumbnails
+        if o.embedMetadata { a.append("--embed-metadata") }
+        if o.embedThumbnail && o.thumbnailEmbeddable { a.append("--embed-thumbnail") }
+        if o.writeThumbnail { a.append("--write-thumbnail") }
+        if o.thumbnailFormat != .original && (o.writeThumbnail || o.embedThumbnail) {
+            a += ["--convert-thumbnails", o.thumbnailFormat.rawValue]
+        }
+        if o.writeDescription { a.append("--write-description") }
+        if o.writeInfoJSON { a.append("--write-info-json") }
+        if o.writeComments { a.append("--write-comments") }
+
+        // Playlist
+        switch o.playlistMode {
+        case .auto: break
+        case .single: a.append("--no-playlist")
+        case .full: a.append("--yes-playlist")
+        }
+        if !o.playlistItems.trimmed.isEmpty { a += ["-I", o.playlistItems.trimmed] }
+        if o.useArchive { a += ["--download-archive", o.archivePath] }
+
+        // Network
+        if !o.rateLimit.trimmed.isEmpty { a += ["-r", o.rateLimit.trimmed] }
+        if o.concurrentFragments > 1 { a += ["-N", "\(o.concurrentFragments)"] }
+        if o.retries != 10 { a += ["-R", "\(o.retries)"] }
+        if !o.proxy.trimmed.isEmpty { a += ["--proxy", o.proxy.trimmed] }
+        if o.cookieBrowser != .none { a += ["--cookies-from-browser", o.cookieBrowser.rawValue] }
+        if o.sleepInterval > 0 { a += ["--sleep-interval", "\(o.sleepInterval)"] }
+
+        // Output
+        a += ["-P", o.outputDirectory, "-o", outputTemplate(o)]
+        if o.splitChapters && o.chaptersInFolder {
+            a += ["-o", "chapter:%(title)s/%(section_number)03d - %(section_title)s.%(ext)s"]
+        }
+        if o.restrictFilenames { a.append("--restrict-filenames") }
+        if o.noOverwrites { a.append("--no-overwrites") }
+        if o.noMtime { a.append("--no-mtime") }
+
+        // Anything else the user typed
+        a += tokenize(o.extraArgs)
+
+        if !urls.isEmpty { a.append("--"); a += urls }
+        return a
+    }
+
+    static func outputTemplate(_ o: DownloadOptions) -> String {
+        if o.filenameTemplate == .custom {
+            return o.customTemplate.trimmed.isEmpty ? "%(title)s.%(ext)s" : o.customTemplate.trimmed
+        }
+        return o.filenameTemplate.template
+    }
+
+    static func sortString(_ o: DownloadOptions) -> String? {
+        if !o.customSort.trimmed.isEmpty { return o.customSort.trimmed }
+        var t: [String] = []
+        if o.mode == .audio {
+            if let s = o.audioFormat.preferredSourceSort { t.append(s) }
+        } else {
+            if let h = o.maxResolution.height { t.append("res:\(h)") }
+            if let f = o.fpsLimit.sortToken { t.append(f) }
+            if let v = o.videoCodec.sortToken { t.append(v) }
+            if o.mode == .video, let ac = o.audioCodec.sortToken { t.append(ac) }
+            if o.preferCompatibleStreams, let e = o.container.extSort { t.append(e) }
+        }
+        return t.isEmpty ? nil : t.joined(separator: ",")
+    }
+
+    static func audioFilterArgs(_ o: DownloadOptions) -> [String] {
+        var filters: [String] = []
+        if o.volumeDB != 0 { filters.append("volume=\(String(format: "%.1f", o.volumeDB))dB") }
+        if o.normalizeAudio { filters.append("loudnorm=I=-16:TP=-1.5:LRA=11") }
+        var args: [String] = []
+        if !filters.isEmpty { args += ["-af", filters.joined(separator: ",")] }
+        if let sr = o.sampleRate.value { args += ["-ar", "\(sr)"] }
+        if let ch = o.channels.value { args += ["-ac", "\(ch)"] }
+        return args
+    }
+
+    // MARK: - FFmpeg re-encode pass
+
+    static func ffmpegEncodeArguments(input: String, output: String, o: DownloadOptions) -> [String] {
+        let c = o.container
+        let appleContainer = (c == .mp4 || c == .mov)
+        let crf = "\(Int(o.crf.rounded()))"
+        let bitrate = String(format: "%.1fM", o.hwBitrateMbps)
+
+        var a = ["-hide_banner", "-nostdin", "-y", "-i", input,
+                 "-map", "0:v:0", "-map", "0:a?", "-map", "0:s?",
+                 "-map_metadata", "0", "-map_chapters", "0",
+                 "-c:v", o.encoder.rawValue]
+
+        switch o.encoder {
+        case .x264:
+            a += ["-crf", crf, "-preset", o.preset.rawValue, "-pix_fmt", "yuv420p"]
+        case .x265:
+            a += ["-crf", crf, "-preset", o.preset.rawValue]
+            if appleContainer { a += ["-tag:v", "hvc1"] }
+        case .vtH264:
+            a += ["-b:v", bitrate, "-pix_fmt", "yuv420p"]
+        case .vtHEVC:
+            a += ["-b:v", bitrate]
+            if appleContainer { a += ["-tag:v", "hvc1"] }
+        case .vp9:
+            a += ["-crf", crf, "-b:v", "0", "-row-mt", "1", "-deadline", "good", "-cpu-used", "2"]
+        case .av1:
+            a += ["-crf", crf, "-preset", "\(o.preset.svtAV1Preset)"]
+        case .prores:
+            a += ["-profile:v", "3", "-pix_fmt", "yuv422p10le"]
+        }
+
+        if let h = o.scale.height {
+            a += ["-vf", "scale=-2:'min(\(h),ih)'"]
+        }
+
+        let af = audioFilterArgs(o)
+        if o.encodeAudio || !af.isEmpty {
+            a += ["-c:a", c == .webm ? "libopus" : "aac", "-b:a", o.encodeAudioBitrate.value]
+            a += af
+        } else {
+            a += ["-c:a", "copy"]
+        }
+
+        switch c {
+        case .mp4, .mov: a += ["-c:s", "mov_text"]
+        case .webm: a += ["-c:s", "webvtt"]
+        case .mkv: a += ["-c:s", "copy"]
+        case .avi, .flv: a += ["-sn"]
+        }
+
+        if appleContainer { a += ["-movflags", "+faststart"] }
+        a += ["-progress", "pipe:1", "-nostats", output]
+        return a
+    }
+
+    // MARK: - Display helpers
+
+    static func displayCommand(for o: DownloadOptions, urls: [String]) -> String {
+        var args = arguments(for: o, urls: [], includeInternals: false)
+        args.append("--")
+        let list = urls.isEmpty ? ["<URL>"] : urls
+        return "yt-dlp " + args.map(shellQuote).joined(separator: " ") + " " + list.map(shellQuote).joined(separator: " ")
+    }
+
+    static func shellQuote(_ s: String) -> String {
+        if s == "<URL>" { return s }
+        let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:=,+@")
+        if !s.isEmpty && s.unicodeScalars.allSatisfy({ safe.contains($0) }) { return s }
+        return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Minimal POSIX-ish tokenizer for the "extra arguments" box.
+    static func tokenize(_ s: String) -> [String] {
+        var out: [String] = []
+        var cur = ""
+        var quote: Character? = nil
+        var escaping = false
+        var hasToken = false
+        for ch in s {
+            if escaping { cur.append(ch); escaping = false; continue }
+            if ch == "\\" && quote != "'" { escaping = true; hasToken = true; continue }
+            if let q = quote {
+                if ch == q { quote = nil } else { cur.append(ch) }
+                continue
+            }
+            if ch == "\"" || ch == "'" { quote = ch; hasToken = true; continue }
+            if ch.isWhitespace {
+                if hasToken { out.append(cur); cur = ""; hasToken = false }
+                continue
+            }
+            cur.append(ch)
+            hasToken = true
+        }
+        if hasToken { out.append(cur) }
+        return out
+    }
+}
