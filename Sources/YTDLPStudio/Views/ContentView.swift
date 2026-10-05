@@ -40,7 +40,7 @@ enum OptionCategory: String, CaseIterable, Identifiable {
         case .format: return !o.customFormat.isEmpty || !o.customSort.isEmpty || o.maxResolution != .best || o.videoCodec != .any
         case .audio: return o.audioFiltersActive
         case .encode: return o.encodeEnabled || !o.customPPA.isEmpty
-        case .chapters: return o.splitChapters || o.sponsorBlockMode != .off || !o.removeChaptersRegex.isEmpty
+        case .chapters: return o.chapterSource != .youtube || o.splitChapters || o.sponsorBlockMode != .off || !o.removeChaptersRegex.isEmpty
         case .subtitles: return o.writeSubs || o.writeAutoSubs || o.embedSubs
         case .metadata: return o.writeThumbnail || o.writeInfoJSON || o.writeDescription || o.writeComments
         case .trim: return o.trimEnabled
@@ -57,6 +57,9 @@ struct ContentView: View {
     @EnvironmentObject private var tools: ToolLocator
     @EnvironmentObject private var downloads: DownloadManager
 
+    @StateObject private var commentSearch = CommentChapterSearch()
+    @State private var commentSelections: [String: String] = [:]
+    @State private var commentSelectionSummary: String?
     @State private var urlText = ""
     @State private var category: OptionCategory? = .format
     @State private var inspecting: MediaInfo?
@@ -81,6 +84,10 @@ struct ContentView: View {
                     .frame(minWidth: 340, idealWidth: 420)
             }
             Divider()
+            if store.options.chapterSource != .youtube {
+                Text("Comment chapters are prepared by the app before downloading. The command below shows download options only.")
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 6)
+            }
             CommandPreviewBar(command: CommandBuilder.displayCommand(for: store.options, urls: urls))
         }
         .sheet(item: $inspecting) { info in
@@ -88,6 +95,18 @@ struct ContentView: View {
                             onUseFormat: { store.options.customFormat = $0 },
                             onDownload: { startDownload() })
         }
+        .sheet(item: $commentSearch.preview) { preview in
+            CommentChapterPicker(preview: preview) { commentID in
+                commentSelections[preview.videoID] = commentID
+                if let candidate = preview.candidates.first(where: { $0.id == commentID }) {
+                    commentSelectionSummary = "Selected \(candidate.chapters.count) chapters from \(candidate.author) for \(preview.title)."
+                }
+            }
+        }
+        .onChange(of: commentSearch.error) { message in
+            if let message { errorMessage = message }
+        }
+        .onDisappear { commentSearch.cancel() }
         .alert("Something went wrong", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -263,7 +282,15 @@ struct ContentView: View {
                 case .format: FormatOptionsView(o: $store.options)
                 case .audio: AudioOptionsView(o: $store.options)
                 case .encode: EncodeOptionsView(o: $store.options)
-                case .chapters: ChaptersOptionsView(o: $store.options)
+                case .chapters:
+                    ChaptersOptionsView(o: $store.options,
+                        onFindComments: {
+                            guard let url = urls.first, let snapshot = tools.snapshot() else { return }
+                            commentSearch.search(url: url, options: store.options, tools: snapshot)
+                        }, onCancelSearch: { commentSearch.cancel() },
+                        canSearchComments: !urls.isEmpty && tools.ytdlpPath != nil,
+                        searchingComments: commentSearch.isSearching,
+                        selectedCommentSummary: commentSelectionSummary)
                 case .subtitles: SubtitleOptionsView(o: $store.options)
                 case .metadata: MetadataOptionsView(o: $store.options)
                 case .trim: TrimOptionsView(o: $store.options)
@@ -287,7 +314,7 @@ struct ContentView: View {
             errorMessage = "yt-dlp wasn't found. Install it with `brew install yt-dlp`, or set its path in Settings."
             return
         }
-        downloads.enqueue(urls: list, options: store.options, tools: snapshot)
+        downloads.enqueue(urls: list, options: store.options, tools: snapshot, commentSelections: commentSelections)
         urlText = ""
     }
 

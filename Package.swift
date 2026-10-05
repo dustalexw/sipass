@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "YTDLPStudio",
             path: "Sources/YTDLPStudio"
-        )
+        ),
+        .testTarget(name: "YTDLPStudioTests", dependencies: ["YTDLPStudio"])
     ]
 )

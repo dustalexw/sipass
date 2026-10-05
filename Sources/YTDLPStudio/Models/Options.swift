@@ -496,6 +496,7 @@ struct DownloadOptions: Codable, Equatable {
     var customPPA = ""
 
     // Chapters & SponsorBlock
+    var chapterSource: ChapterSource = .youtube
     var embedChapters = true
     var splitChapters = false
     var chaptersInFolder = true

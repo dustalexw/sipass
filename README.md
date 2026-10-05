@@ -46,7 +46,8 @@ VideoToolbox H.264/HEVC (hardware), VP9, SVT-AV1 or ProRes 422 HQ, with CRF or b
 speed preset, downscaling and audio re-encode. Optionally replaces the original
 (which goes to the Trash). Also a raw `--postprocessor-args` field.
 
-**Chapters & SponsorBlock** — embed chapters, split into one file per chapter
+**Chapters & SponsorBlock** — choose YouTube chapters, comment timestamps, or comments
+only when YouTube chapters are missing; preview and select a comment track list; embed chapters, split into one file per chapter
 (optionally into a folder), remove chapters by regex, and SponsorBlock mark-or-cut for
 every category.
 
@@ -128,3 +129,27 @@ Sources/YTDLPStudio/
   Services/ChapterTagger.swift  per-track tags for split albums
   Views/…                       SwiftUI interface
 ```
+
+## Chapters from YouTube comments
+
+In **Chapters & SponsorBlock**, choose **Comments** or **Comments if chapters are missing**.
+Paste an individual video link and click **Find chapters in comments** to preview candidates,
+then choose **Use these chapters**. Download normally to embed or split those chapters.
+Selections apply only to that video and remain in memory for this window; queued jobs retain
+their selection when retried. The source setting is saved with settings and presets.
+
+Without a manual selection, each video uses the valid comment list with the most chapters,
+then the most likes. Searches examine up to 200 top-level comments sorted by YouTube's Top
+order; a list outside that sample may not be found. Fetching can be cancelled. Lists need
+at least three titled, increasing timestamps within the video's known duration, one per
+line. Both `0:00 Intro` and `Intro – 0:00` work, including hour timestamps. A list that starts
+after zero gets an Opening chapter, preserving the beginning of the video.
+
+**Comments** stops the job if no valid list is available, or if a manually selected comment
+is no longer found. **Comments if chapters are missing** keeps existing YouTube chapters
+and otherwise allows a download without chapters if no list is found. Playlist selections
+are processed per video; use individual video links to preview a specific track list.
+Comment fetching respects the browser cookie and proxy settings. The copied download
+command does not perform the app's comment preprocessing.
+
+Run the parser, metadata, queue and splitting checks on macOS with `swift test`.

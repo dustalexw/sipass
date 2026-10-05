@@ -9,7 +9,8 @@ cd "$(dirname "$0")"
 mkdir -p Sources/Core
 for f in Models/Options.swift Models/OptionsStore.swift Services/CommandBuilder.swift \
          Services/DownloadManager.swift Services/MetadataFetcher.swift \
-         Services/ProcessRunner.swift Services/ToolLocator.swift Services/ChapterTagger.swift; do
+         Services/ProcessRunner.swift Services/ToolLocator.swift Services/ChapterTagger.swift \
+         Services/CommentChapterParser.swift; do
   ln -sf "../../../Sources/YTDLPStudio/$f" "Sources/Core/$(basename "$f")"
 done
 command -v swift >/dev/null || export PATH=/usr/libexec/swift/bin:$PATH

@@ -43,6 +43,7 @@ final class DownloadJob: ObservableObject, Identifiable {
     let url: String
     let options: DownloadOptions
     let tools: ToolSnapshot
+    var commentSelections: [String: String] = [:]
 
     @Published var title = ""
     @Published var status: JobStatus = .queued
@@ -180,9 +181,11 @@ final class DownloadManager: ObservableObject {
 
     private var maxConcurrent: Int { max(1, UserDefaults.standard.integer(forKey: "maxConcurrent")) }
 
-    func enqueue(urls: [String], options: DownloadOptions, tools: ToolSnapshot) {
+    func enqueue(urls: [String], options: DownloadOptions, tools: ToolSnapshot, commentSelections: [String: String] = [:]) {
         for url in urls {
-            jobs.append(DownloadJob(url: url, options: options, tools: tools))
+            let job = DownloadJob(url: url, options: options, tools: tools)
+            job.commentSelections = commentSelections
+            jobs.append(job)
         }
         pump()
     }
@@ -255,10 +258,62 @@ final class DownloadManager: ObservableObject {
             .appendingPathComponent("ytdlp-studio-\(job.id.uuidString)", isDirectory: true).path
         try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
 
+        if job.options.chapterSource != .youtube {
+            prepareCommentChapters(job, pathsFile: pathsFile, chaptersFile: chaptersFile, tempDir: tempDir, includeComments: job.options.chapterSource == .comments)
+        } else {
+            runDownload(job, pathsFile: pathsFile, chaptersFile: chaptersFile, tempDir: tempDir, infoFile: nil)
+        }
+    }
+
+    private func prepareCommentChapters(_ job: DownloadJob, pathsFile: String, chaptersFile: String?, tempDir: String, includeComments: Bool) {
+        job.status = .processing(includeComments ? "Finding chapters in comments" : "Checking YouTube chapters")
+        var json = ""
+        let runner = ProcessRunner(executable: job.tools.ytdlp,
+            arguments: CommentChapterService.arguments(url: job.url, options: job.options, includeComments: includeComments), environment: job.tools.environment)
+        runner.onLine = { [weak job] line, isErr in
+            if isErr { job?.handleYtdlpLine(line) } else { json += line + "\n" }
+        }
+        runner.onExit = { [weak self, weak job] code in
+            guard let self, let job else { return }
+            job.runner = nil
+            do {
+                guard !job.wasCancelled else { throw SimpleError("Cancelled") }
+                guard code == 0 else { throw SimpleError(job.lastError ?? "Could not fetch comments (exit \(code)).") }
+                let info = try CommentChapterService.object(from: json)
+                if !includeComments && CommentChapterService.needsComments(info) {
+                    self.prepareCommentChapters(job, pathsFile: pathsFile, chaptersFile: chaptersFile, tempDir: tempDir, includeComments: true)
+                    return
+                }
+                let videos = try CommentChapterService.prepare(info, source: job.options.chapterSource,
+                    selections: job.commentSelections, keepComments: job.options.writeComments, log: job.appendLog)
+                guard !videos.isEmpty else { throw SimpleError("No videos available in the selected playlist range.") }
+                let path = (tempDir as NSString).appendingPathComponent("comment-chapters.info.json")
+                try JSONSerialization.data(withJSONObject: videos).write(to: URL(fileURLWithPath: path), options: .atomic)
+                // Fetch warnings should not be mistaken for a later download failure.
+                job.lastError = nil
+                self.runDownload(job, pathsFile: pathsFile, chaptersFile: chaptersFile, tempDir: tempDir, infoFile: path)
+            } catch {
+                try? FileManager.default.removeItem(atPath: tempDir)
+                job.status = job.wasCancelled ? .cancelled : .failed(error.localizedDescription)
+                self.pump()
+            }
+        }
+        job.runner = runner
+        do { try runner.start() }
+        catch {
+            job.runner = nil
+            try? FileManager.default.removeItem(atPath: tempDir)
+            job.status = .failed(error.localizedDescription)
+            pump()
+        }
+    }
+
+    private func runDownload(_ job: DownloadJob, pathsFile: String, chaptersFile: String?, tempDir: String, infoFile: String?) {
+        job.status = .starting
         let ffDir = job.tools.ffmpeg.map { ($0 as NSString).deletingLastPathComponent }
         let args = CommandBuilder.arguments(for: job.options, urls: [job.url],
                                             ffmpegLocation: ffDir, pathsFile: pathsFile,
-                                            chaptersFile: chaptersFile, tempDirectory: tempDir)
+                                            chaptersFile: chaptersFile, tempDirectory: tempDir, infoFile: infoFile)
         job.appendLog("$ yt-dlp " + args.map(CommandBuilder.shellQuote).joined(separator: " "))
 
         let runner = ProcessRunner(executable: job.tools.ytdlp, arguments: args, environment: job.tools.environment)
@@ -273,6 +328,8 @@ final class DownloadManager: ObservableObject {
         do {
             try runner.start()
         } catch {
+            job.runner = nil
+            try? FileManager.default.removeItem(atPath: tempDir)
             job.status = .failed(error.localizedDescription)
             pump()
         }

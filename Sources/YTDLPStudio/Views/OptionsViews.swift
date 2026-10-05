@@ -216,6 +216,11 @@ struct EncodeOptionsView: View {
 
 struct ChaptersOptionsView: View {
     @Binding var o: DownloadOptions
+    var onFindComments: () -> Void = {}
+    var onCancelSearch: () -> Void = {}
+    var canSearchComments = false
+    var searchingComments = false
+    var selectedCommentSummary: String?
 
     private func binding(for c: SponsorCategory) -> Binding<Bool> {
         Binding(
@@ -229,6 +234,26 @@ struct ChaptersOptionsView: View {
     var body: some View {
         Form {
             Section("Chapters") {
+                Picker("Chapter source", selection: $o.chapterSource) {
+                    ForEach(ChapterSource.allCases) { Text($0.label).tag($0) }
+                }
+                if o.chapterSource != .youtube {
+                    HStack {
+                        Button("Find chapters in comments", action: onFindComments)
+                            .disabled(!canSearchComments || searchingComments)
+                        if searchingComments {
+                            ProgressView().controlSize(.small)
+                            Button("Cancel", action: onCancelSearch)
+                        }
+                    }
+                    if let selectedCommentSummary { Text(selectedCommentSummary).font(.callout) }
+                    Hint("Searches the first pasted video’s top 200 comments. Preview a list to choose it, or let each queued video use the list with the most chapters. Lists need at least three increasing timestamps with titles.")
+                    if o.chapterSource == .commentsIfMissing {
+                        Hint("Existing YouTube chapters take priority. If no comment list is found, the video downloads without chapters.")
+                    } else {
+                        Hint("If no valid comment list is found, the download stops so you can choose another source.")
+                    }
+                }
                 Toggle("Embed chapter markers in the file", isOn: $o.embedChapters)
                 Toggle("Split into one file per chapter", isOn: $o.splitChapters)
                 Toggle("Put chapter files in a folder named after the video", isOn: $o.chaptersInFolder)

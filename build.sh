@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 APP_NAME="YT-DLP Studio"
 EXEC="YTDLPStudio"
 BUNDLE_ID="com.local.ytdlpstudio"
-VERSION="1.1.2"
+VERSION="1.2.0"
 
 ARCH_FLAGS=()
 if [[ "${1:-}" == "universal" ]]; then

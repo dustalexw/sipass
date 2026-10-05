@@ -14,7 +14,8 @@ enum CommandBuilder {
                           pathsFile: String? = nil,
                           chaptersFile: String? = nil,
                           tempDirectory: String? = nil,
-                          includeInternals: Bool = true) -> [String] {
+                          includeInternals: Bool = true,
+                          infoFile: String? = nil) -> [String] {
         var a: [String] = []
 
         if includeInternals {
@@ -153,7 +154,13 @@ enum CommandBuilder {
         // Anything else the user typed
         a += tokenize(o.extraArgs)
 
-        if !urls.isEmpty { a.append("--"); a += urls }
+        if let infoFile {
+            // Metadata has already been extracted and playlist items already selected.
+            if let index = a.firstIndex(of: "-I"), index + 1 < a.count {
+                a.removeSubrange(index...index + 1)
+            }
+            a += ["--no-clean-info-json", "--load-info-json", infoFile]
+        } else if !urls.isEmpty { a.append("--"); a += urls }
         return a
     }
 
