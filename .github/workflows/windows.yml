@@ -6,6 +6,11 @@ on:
   pull_request:
     paths: ['Windows/**', 'Assets/**', '.github/workflows/windows.yml']
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish version 2.1.0 after Windows checks pass
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -52,3 +57,24 @@ jobs:
           path: Windows/dist/YT-DLP-Studio-2.1.0-Windows-x64.zip
           retention-days: 30
           if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: YT-DLP-Studio-2.1.0-Windows-x64
+          path: package
+      - name: Publish verified Windows package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v2.1.0 package/YT-DLP-Studio-2.1.0-Windows-x64.zip \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title 'YT-DLP Studio 2.1.0 — Windows portable edition' \
+            --notes-file Windows/RELEASE-NOTES.md --latest
