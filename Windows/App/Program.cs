@@ -10,7 +10,7 @@ internal static class Program {
                 ToolPaths.Bundled().EnsureAvailable();
                 using var form = new MainForm();
                 form.Show();
-                form.Size = new Size(1280, 820);
+                form.WindowState = FormWindowState.Normal; form.Size = form.LogicalToDeviceUnits(new Size(1280, 820));
                 form.PerformLayout();
                 Application.DoEvents();
                 using var bitmap = new Bitmap(form.Width, form.Height);
