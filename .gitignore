@@ -1,0 +1,6 @@
+.build/
+build/
+.swiftpm/
+LinuxHarness/Sources/Core/
+*.xcodeproj/
+.DS_Store
