@@ -1,6 +1,7 @@
 # YT-DLP Studio
 
-A native SwiftUI front end for **yt-dlp** and **FFmpeg** on macOS. Every major yt-dlp
+A native desktop front end for **yt-dlp** and **FFmpeg**, with SwiftUI on macOS
+and Windows Forms on Windows. Every major yt-dlp
 feature is a checkbox, picker or slider, and the exact command is shown live at the
 bottom of the window so you can copy it into Terminal.
 
@@ -9,7 +10,13 @@ form, a subtle central YouTube play mark, and an integrated download arrow. The
 1024px source is in `Assets/AppIcon.png`; `AppIcon.icns` contains the native macOS
 icon sizes used by the app bundle.
 
-## Requirements
+## Windows portable edition
+
+The Windows x64 edition includes the .NET desktop runtime, yt-dlp, FFmpeg, ffprobe
+and Deno. Extract the entire ZIP and open `YTDLPStudio.exe`; no dependencies need
+to be installed separately. See [Windows instructions and build details](Windows/README.md).
+
+## macOS requirements
 
 - macOS 13 Ventura or later (Apple Silicon or Intel)
 - Swift 5.9+ — Xcode 15+, or just the Command Line Tools (`xcode-select --install`)

@@ -4,3 +4,7 @@ build/
 LinuxHarness/Sources/Core/
 *.xcodeproj/
 .DS_Store
+Windows/**/bin/
+Windows/**/obj/
+Windows/dist/
+Windows/.cache/

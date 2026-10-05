@@ -1,0 +1,54 @@
+name: Windows portable build
+on:
+  push:
+    branches: [main]
+    paths: ['Windows/**', 'Assets/**', '.github/workflows/windows.yml']
+  pull_request:
+    paths: ['Windows/**', 'Assets/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Build app and bundle verified tools
+        run: ./Windows/scripts/build.ps1
+      - name: Test core and bundled media processing
+        run: |
+          $env:YTDLP_TEST_TOOLS = (Resolve-Path 'Windows/dist/YT-DLP Studio/tools').Path
+          dotnet run --project Windows/Tests/YtdlpStudio.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Windows tests failed.' }
+      - name: Start native Windows interface
+        run: |
+          $app = Resolve-Path 'Windows/dist/YT-DLP Studio/YTDLPStudio.exe'
+          $process = Start-Process $app -ArgumentList '--smoke-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            Get-Content 'Windows/dist/YT-DLP Studio/smoke-test-error.txt' -ErrorAction SilentlyContinue
+            throw 'Native UI smoke test failed.'
+          }
+      - name: Save native interface preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-interface-preview
+          path: Windows/dist/YT-DLP Studio/Windows-smoke.png
+          if-no-files-found: error
+      - name: Package portable ZIP
+        run: |
+          Remove-Item 'Windows/dist/YT-DLP Studio/Windows-smoke.png'
+          Compress-Archive -Path 'Windows/dist/YT-DLP Studio' -DestinationPath 'Windows/dist/YT-DLP-Studio-2.1.0-Windows-x64.zip'
+          Get-FileHash 'Windows/dist/YT-DLP-Studio-2.1.0-Windows-x64.zip' -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YT-DLP-Studio-2.1.0-Windows-x64
+          path: Windows/dist/YT-DLP-Studio-2.1.0-Windows-x64.zip
+          retention-days: 30
+          if-no-files-found: error

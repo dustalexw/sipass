@@ -1,0 +1,105 @@
+using System.Diagnostics;
+using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using YtdlpStudio.Core;
+
+// Fixture-tool mode replaces only online extraction; media processing always uses real bundled tools.
+if (args.Contains("--sleep-child")) { await Task.Delay(TimeSpan.FromSeconds(30)); return 0; }
+if (args.Contains("--ignore-config") && Environment.GetEnvironmentVariable("YTDLP_FIXTURE_METADATA") is { } fixturePath) {
+    if (Environment.GetEnvironmentVariable("YTDLP_FIXTURE_SLOW") == "1") {
+        var childStart = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false }; childStart.ArgumentList.Add("--sleep-child");
+        using var child = Process.Start(childStart)!;
+        File.WriteAllText(Environment.GetEnvironmentVariable("YTDLP_FIXTURE_PIDFILE")!, child.Id.ToString());
+        await Task.Delay(TimeSpan.FromSeconds(30)); return 0;
+    }
+    if (args.Contains("--dump-single-json")) { Console.WriteLine(await File.ReadAllTextAsync(fixturePath)); return 0; }
+    var tool = Environment.GetEnvironmentVariable("YTDLP_REAL_TOOL")!;
+    var result = await ProcessRunner.RunAsync(tool, args, (line, error) => { if (error) Console.Error.WriteLine(line); else Console.WriteLine(line); }, captureOutput: false);
+    return result.ExitCode;
+}
+int passed = 0, failed = 0;
+void Check(bool condition, string name) { if (condition) { passed++; Console.WriteLine("PASS " + name); } else { failed++; Console.Error.WriteLine("FAIL " + name); } }
+void Throws(Action action, string name) { try { action(); Check(false, name); } catch (Exception) { Check(true, name); } }
+var work = Path.Combine(Path.GetTempPath(), "YTDLPStudio-tests-" + Guid.NewGuid()); Directory.CreateDirectory(work);
+Environment.SetEnvironmentVariable("YTDLP_STUDIO_DATA_DIR", Path.Combine(work, "profile"));
+try {
+    var trackList = "0:00 Intro\n0:02 First song\n0:04 Last song";
+    var parsed = CommentChapters.Parse("Track list\n[0:00] Intro\n1. 0:02 First song\nLast song – 0:04", 6);
+    Check(parsed.Select(c => c.Title).SequenceEqual(new[] { "Intro", "First song", "Last song" }), "Timestamp formats and numbered lists");
+    Check(parsed.Select(c => c.End).SequenceEqual(new double[] { 2, 4, 6 }), "Chapter end boundaries");
+    Check(CommentChapters.Parse("0:00 Intro\n1:02:03 Middle\n2:00:00 End", 8000)[1].Start == 3723, "Hour timestamps");
+    Check(CommentChapters.Parse("0:01 One\n0:02 Two\n0:04 Three", 6)[0].Title == "Opening", "Preserves beginning of video");
+    foreach (var text in new[] { "0:00 One\n0:00 Two\n0:04 Three", "0:04 One\n0:02 Two\n0:05 Three", "0:00 One\n0:02 Two\n0:06 Three", "0:00 One\n0:99 Two\n0:04 Three", "0:00 One\n0:02 Two", "I love 0:00 so much\n0:02 Two\n0:04 Three" }) Check(CommentChapters.Parse(text, 6).Count == 0, "Rejects invalid timestamp list");
+    JsonObject Video(string id = "one", string text = "") => new() { ["id"] = id, ["title"] = "Test album", ["duration"] = 6, ["comments"] = new JsonArray(new JsonObject { ["id"] = "comment", ["author"] = "Listener", ["like_count"] = 10, ["text"] = text.Length > 0 ? text : trackList }) };
+    var original = Video(); original["chapters"] = new JsonArray(new Chapter("Original", 0, 6).Json());
+    var kept = CommentChapters.Prepare(original, "commentsIfMissing", new Dictionary<string, string>(), false);
+    Check(kept[0]!["chapters"]![0]!["title"]!.ToString() == "Original", "Fallback retains existing chapters");
+    var comments = CommentChapters.Prepare(original, "comments", new Dictionary<string, string>(), false);
+    Check(comments[0]!["chapters"]!.AsArray().Count == 3 && comments[0]!["comments"] == null, "Comment source overrides original and omits comment sidecar");
+    var missing = Video(); missing["comments"] = new JsonArray();
+    Throws(() => CommentChapters.Prepare(missing, "comments", new Dictionary<string, string>(), false), "Comment-only fails when list missing");
+    Check(CommentChapters.Prepare(missing, "commentsIfMissing", new Dictionary<string, string>(), false).Count == 1, "Missing fallback can download without chapters");
+    Throws(() => CommentChapters.Prepare(Video(), "comments", new Dictionary<string, string> { ["one"] = "deleted" }, false), "Unavailable manual choice fails explicitly");
+    var playlist = new JsonObject { ["entries"] = new JsonArray(Video("one"), Video("two")) };
+    Check(CommentChapters.Prepare(playlist, "comments", new Dictionary<string, string>(), true).Count == 2, "Playlist processed per video");
+    Check(!CommentChapters.NeedsComments(original) && CommentChapters.NeedsComments(playlist), "Avoids comments when chapters exist");
+    var tokens = CommandBuilder.Tokenize("--cookies \"C:\\Users\\Someone\\cookies.txt\" --replace-in-metadata title 'a b' ''");
+    Check(tokens[1] == @"C:\Users\Someone\cookies.txt" && tokens[^1] == "", "Windows argument quoting preserves backslashes and empty tokens");
+    Throws(() => CommandBuilder.Tokenize("--cookies \"unfinished"), "Unclosed argument quotes are rejected");
+    Check(ChapterTagger.StripNumber("01. One More Time") == "One More Time" && ChapterTagger.StripNumber("7 Rings") == "7 Rings", "Track numbers removed without damaging titles");
+    foreach (var preset in SettingsStore.BuiltIn) {
+        var command = CommandBuilder.Arguments(preset.Options, ["https://example.com/video"]);
+        Check(command.Contains("--windows-filenames") && command[^1] == "https://example.com/video", "Preset command: " + preset.Name);
+    }
+    var o = new DownloadOptions { PlaylistItems = "3,5", ChapterSource = "comments" };
+    var load = CommandBuilder.Arguments(o, ["VIDEO"], infoFile: "chapters.json");
+    Check(load.Contains("--load-info-json") && !load.Contains("-I") && !load.Contains("VIDEO"), "Loaded playlist does not select item range twice");
+    var saved = new SettingsStore(Path.Combine(work, "saved")); saved.Settings.Options.AudioFormat = "flac"; saved.SavePreset("Mine"); saved.Save();
+    var restored = new SettingsStore(Path.Combine(work, "saved"));
+    Check(restored.Settings.Options.AudioFormat == "flac" && restored.Settings.Presets.Count == 1, "Settings and custom presets round-trip");
+    File.WriteAllText(Path.Combine(work, "saved", "settings.json"), "{\"Options\":{\"OutputDirectory\":\"folder\"}}");
+    var older = new SettingsStore(Path.Combine(work, "saved")); Check(older.Settings.Options.OutputDirectory == "folder" && older.Settings.Options.ChapterSource == "youtube", "Missing settings retain defaults");
+    foreach (var property in typeof(DownloadOptions).GetProperties()) {
+        var setting = property.GetCustomAttribute<SettingAttribute>(); if (setting == null || setting.Choices.Length == 0 || property.PropertyType != typeof(string)) continue;
+        var choices = setting.Choices.Split('|').Select(s => s.Split('=')[0]); Check(choices.Contains((string)property.GetValue(new DownloadOptions())!), "Valid initial choice: " + property.Name);
+    }
+    // Real downloader/FFmpeg integration. CI points this at the packaged tools.
+    string? toolsDir = Environment.GetEnvironmentVariable("YTDLP_TEST_TOOLS");
+    var real = toolsDir != null ? ToolPaths.Bundled(Path.GetDirectoryName(toolsDir)) : new ToolPaths("/opt/homebrew/bin/yt-dlp", "/opt/homebrew/bin/ffmpeg", "/opt/homebrew/bin/ffprobe", Environment.ProcessPath!);
+    real.EnsureAvailable();
+    var audio = Path.Combine(work, "source.wav");
+    var generate = await ProcessRunner.RunAsync(real.Ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=6", audio]);
+    Check(generate.ExitCode == 0, "Creates local integration clip");
+    var metadata = Video("one"); string uri = new Uri(audio).AbsoluteUri;
+    metadata["_type"] = "video"; metadata["extractor"] = "youtube"; metadata["extractor_key"] = "Youtube"; metadata["webpage_url"] = "https://www.youtube.com/watch?v=one"; metadata["url"] = uri; metadata["ext"] = "wav"; metadata["protocol"] = "file";
+    metadata["formats"] = new JsonArray(new JsonObject { ["format_id"] = "audio", ["url"] = uri, ["ext"] = "wav", ["protocol"] = "file", ["vcodec"] = "none", ["acodec"] = "pcm_s16le" });
+    var fixture = Path.Combine(work, "fixture.json"); await File.WriteAllTextAsync(fixture, metadata.ToJsonString());
+    Environment.SetEnvironmentVariable("YTDLP_FIXTURE_METADATA", fixture); Environment.SetEnvironmentVariable("YTDLP_REAL_TOOL", real.Ytdlp);
+    var fixtureTools = new ToolPaths(Environment.ProcessPath!, real.Ffmpeg, real.Ffprobe, real.Deno);
+    var downloadOptions = new DownloadOptions { Mode = "audio", AudioFormat = "m4a", ChapterSource = "comments", SplitChapters = true, EmbedThumbnail = false, OutputDirectory = Path.Combine(work, "output"), ExtraArgs = "--enable-file-urls" };
+    var queue = new DownloadQueue(fixtureTools); queue.Enqueue(["https://www.youtube.com/watch?v=one"], downloadOptions, new Dictionary<string, string> { ["one"] = "comment" });
+    var job = queue.Jobs[0]; await job.Completion.WaitAsync(TimeSpan.FromSeconds(60));
+    Check(job.State == JobState.Finished, "Download queue finishes: " + job.Stage);
+    if (job.State != JobState.Finished) Console.WriteLine(string.Join('\n', job.Log));
+    Check(job.OutputFiles.Length == 4 && job.OutputFiles.All(File.Exists), "Main file plus three chapter files captured");
+    foreach (var file in job.OutputFiles) {
+        var probe = await ProcessRunner.RunAsync(real.Ffprobe, ["-v", "error", "-show_chapters", "-show_format", "-of", "json", file]); var info = JsonNode.Parse(probe.Stdout)!;
+        if (Path.GetFileName(file).StartsWith("001")) Check(info["format"]!["tags"]!["title"]!.ToString() == "Intro" && info["format"]!["tags"]!["track"]!.ToString().StartsWith('1'), "Split track title and number verified with ffprobe");
+        else if (Path.GetDirectoryName(file) == downloadOptions.OutputDirectory) Check(info["chapters"]!.AsArray().Count == 3, "Embedded chapter markers verified with ffprobe");
+    }
+    metadata["comments"] = new JsonArray(); await File.WriteAllTextAsync(fixture, metadata.ToJsonString()); queue.Retry(job); await job.Completion.WaitAsync(TimeSpan.FromSeconds(60));
+    Check(job.State == JobState.Failed && job.Stage.Contains("selected comment"), "Retry retains manual choice and rejects missing comment");
+    var pidfile = Path.Combine(work, "child.pid"); Environment.SetEnvironmentVariable("YTDLP_FIXTURE_PIDFILE", pidfile); Environment.SetEnvironmentVariable("YTDLP_FIXTURE_SLOW", "1");
+    var cancelQueue = new DownloadQueue(fixtureTools); cancelQueue.Enqueue(["VIDEO"], downloadOptions); var cancelJob = cancelQueue.Jobs[0];
+    var timeout = Stopwatch.StartNew(); while (!File.Exists(pidfile) && timeout.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(50);
+    Check(File.Exists(pidfile), "Cancellation fixture launched a child process");
+    int childPid = File.Exists(pidfile) ? int.Parse(File.ReadAllText(pidfile)) : -1;
+    cancelQueue.Cancel(cancelJob); await cancelJob.Completion.WaitAsync(TimeSpan.FromSeconds(10)); Check(cancelJob.State == JobState.Cancelled, "Cancel during metadata fetching");
+    bool childGone = childPid < 0; try { using var child = Process.GetProcessById(childPid); childGone = child.HasExited; } catch (ArgumentException) { childGone = true; }
+    Check(childGone, "Cancellation terminates the process tree");
+    Environment.SetEnvironmentVariable("YTDLP_FIXTURE_SLOW", null);
+} catch (Exception error) { failed++; Console.Error.WriteLine(error); }
+finally { try { Directory.Delete(work, true); } catch (IOException) { } }
+Console.WriteLine($"{passed} passed, {failed} failed");
+return failed == 0 ? 0 : 1;
