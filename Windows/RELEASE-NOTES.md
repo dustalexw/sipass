@@ -1,7 +1,11 @@
+### What's new in 2.1.1
+- Fixed clipped and cut-off text, buttons, and queue controls on displays scaled above 100% (common on laptops and Parallels). The window, dialogs, and options now scale with Windows display settings and when moved between monitors.
+- Labels containing "&" (such as "Format & quality") display correctly.
+
 YT-DLP Studio now has a native Windows desktop edition with a self-contained portable package.
 
 ### Download and start
-Download **YT-DLP-Studio-2.1.0-Windows-x64.zip**, extract the entire ZIP, and open **YTDLPStudio.exe** inside the **YT-DLP Studio** folder. Supports Windows 10 22H2 and Windows 11 on x64 PCs. Keep the executable alongside its bundled files.
+Download **YT-DLP-Studio-2.1.1-Windows-x64.zip**, extract the entire ZIP, and open **YTDLPStudio.exe** inside the **YT-DLP Studio** folder. Supports Windows 10 22H2 and Windows 11 on x64 PCs. Keep the executable alongside its bundled files.
 
 ### Included
 - Native Windows interface with download queue, saved presets, format selection, logs, cancellation, and keyboard shortcuts.

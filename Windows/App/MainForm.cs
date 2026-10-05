@@ -22,6 +22,8 @@ public sealed class MainForm : Form {
     bool settingsDirty, closing, ready;
     DateTime lastEdit;
     public DownloadOptions Current => store.Settings.Options;
+    // Stamped by build.ps1 (-p:Version); strip the "+commit" suffix the SDK appends.
+    static string AppVersion => Application.ProductVersion.Split('+')[0];
 
     SplitContainer left = null!;
     public MainForm() {
@@ -29,7 +31,7 @@ public sealed class MainForm : Form {
         SuspendLayout(); AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi;
         queue = new(tools, path => Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(path, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin));
         options = new OptionsPanel(OptionsChanged);
-        Text = "YT-DLP Studio 2.1 — Windows"; Font = new Font("Segoe UI", 10); Size = new Size(1280, 820); MinimumSize = new Size(900, 600); StartPosition = FormStartPosition.CenterScreen;
+        Text = "YT-DLP Studio " + AppVersion + " — Windows"; Font = new Font("Segoe UI", 10); Size = new Size(1280, 820); MinimumSize = new Size(900, 600); StartPosition = FormStartPosition.CenterScreen;
         KeyPreview = true;
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(12) };
@@ -80,7 +82,7 @@ public sealed class MainForm : Form {
             try {
                 tools.EnsureAvailable(); ready = true;
                 var yt = await ProcessRunner.RunAsync(tools.Ytdlp, ["--version"]);
-                footer.Text = "Bundled yt-dlp " + yt.Stdout.Trim() + " · FFmpeg and Deno included · Windows x64 · 2.1.0";
+                footer.Text = "Bundled yt-dlp " + yt.Stdout.Trim() + " · FFmpeg and Deno included · Windows x64 · " + AppVersion;
                 if (store.LoadWarning != null) MessageBox.Show(this, store.LoadWarning, "Settings restored");
             } catch (Exception error) { footer.Text = error.Message; }
             UpdateButtons();

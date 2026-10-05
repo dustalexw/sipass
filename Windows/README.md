@@ -30,6 +30,6 @@ dotnet run --project Windows/Tests/YtdlpStudio.Tests.csproj -c Release
 
 The GitHub **Windows portable build** workflow runs the tests, publishes a self-contained application, verifies the bundled executables, starts the native interface in a smoke test, and uploads the portable ZIP. The packaging script downloads pinned dependency releases, checks their SHA-256 hashes, and preserves license notices. Updating dependencies means changing the lock file with verified upstream hashes and rebuilding the package.
 
-To publish the approved Windows 2.1.0 release, manually run the workflow on `main` with **Publish version 2.1.0 after Windows checks pass** enabled. Publishing runs only after every build check succeeds. Ordinary pushes and pull requests only build and test; the release step refuses to overwrite an existing version.
+To publish a Windows release, set `VERSION` at the top of `.github/workflows/windows.yml`, then manually run the workflow on `main` with **Publish this version after Windows checks pass** enabled. Publishing runs only after every build check succeeds. Ordinary pushes and pull requests only build and test; the release step refuses to overwrite an existing version.
 
 The macOS SwiftUI implementation remains in `Sources/YTDLPStudio`. The Windows implementation lives in `Windows/App`, with platform-independent command, metadata, queue and tagging code in `Windows/Core`. Tests use an offline metadata fixture and a local generated clip, then run the real yt-dlp/FFmpeg processing pipeline; live YouTube extraction is not part of CI.

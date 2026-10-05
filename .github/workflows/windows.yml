@@ -8,11 +8,14 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: Publish version 2.1.0 after Windows checks pass
+        description: Publish this version after Windows checks pass (never overwrites an existing release)
         type: boolean
         default: false
 permissions:
   contents: read
+env:
+  # Single source for the release version; build.ps1 stamps it into the app.
+  VERSION: '2.1.1'
 jobs:
   build:
     runs-on: windows-latest
@@ -30,7 +33,7 @@ jobs:
         with:
           dotnet-version: '10.0.401'
       - name: Build app and bundle verified tools
-        run: ./Windows/scripts/build.ps1
+        run: ./Windows/scripts/build.ps1 -Version $env:VERSION
       - name: Test core and bundled media processing
         run: |
           $env:YTDLP_TEST_TOOLS = (Resolve-Path 'Windows/dist/YT-DLP Studio/tools').Path
@@ -53,12 +56,12 @@ jobs:
       - name: Package portable ZIP
         run: |
           Remove-Item 'Windows/dist/YT-DLP Studio/Windows-smoke.png'
-          Compress-Archive -Path 'Windows/dist/YT-DLP Studio' -DestinationPath 'Windows/dist/YT-DLP-Studio-2.1.0-Windows-x64.zip'
-          Get-FileHash 'Windows/dist/YT-DLP-Studio-2.1.0-Windows-x64.zip' -Algorithm SHA256 | Format-List
+          Compress-Archive -Path 'Windows/dist/YT-DLP Studio' -DestinationPath "Windows/dist/YT-DLP-Studio-$env:VERSION-Windows-x64.zip"
+          Get-FileHash "Windows/dist/YT-DLP-Studio-$env:VERSION-Windows-x64.zip" -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@v7
         with:
-          name: YT-DLP-Studio-2.1.0-Windows-x64
-          path: Windows/dist/YT-DLP-Studio-2.1.0-Windows-x64.zip
+          name: YT-DLP-Studio-${{ env.VERSION }}-Windows-x64
+          path: Windows/dist/YT-DLP-Studio-${{ env.VERSION }}-Windows-x64.zip
           retention-days: 30
           if-no-files-found: error
       - name: Publish verified Windows package
@@ -66,14 +69,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip = 'Windows/dist/YT-DLP-Studio-2.1.0-Windows-x64.zip'
-          gh release view v2.1.0 --repo $env:GITHUB_REPOSITORY *> $null
+          $tag = "v$env:VERSION"
+          $zip = "Windows/dist/YT-DLP-Studio-$env:VERSION-Windows-x64.zip"
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            # Re-running after a partial publish: replace the asset instead of failing on the existing tag.
-            gh release upload v2.1.0 $zip --repo $env:GITHUB_REPOSITORY --clobber
-          } else {
-            gh release create v2.1.0 $zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA `
-              --title 'YT-DLP Studio 2.1.0 — Windows portable edition' `
-              --notes-file Windows/RELEASE-NOTES.md --latest
+            # Published releases are never replaced; bump VERSION at the top of this workflow instead.
+            Write-Host "::error::$tag is already published. Bump VERSION in .github/workflows/windows.yml to release a new build."
+            exit 1
           }
+          gh release create $tag $zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA `
+            --title "YT-DLP Studio $env:VERSION — Windows portable edition" `
+            --notes-file Windows/RELEASE-NOTES.md --latest
           if ($LASTEXITCODE -ne 0) { throw 'Publishing the release failed.' }
