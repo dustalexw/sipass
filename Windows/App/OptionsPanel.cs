@@ -6,7 +6,7 @@ public sealed class OptionsPanel : UserControl {
     readonly FlowLayoutPanel fields = new() { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(16) };
     readonly ToolTip tips = new() { AutoPopDelay = 20000 };
     readonly Action changed;
-    public OptionsPanel(Action onChanged) { changed = onChanged; Controls.Add(fields); BackColor = SystemColors.Window; }
+    public OptionsPanel(Action onChanged) { changed = onChanged; Dock = DockStyle.Fill; Controls.Add(fields); BackColor = SystemColors.Window; }
     public void ShowCategory(DownloadOptions options, string category) {
         fields.SuspendLayout(); foreach (Control field in fields.Controls.Cast<Control>().ToArray()) field.Dispose(); fields.Controls.Clear();
         fields.Controls.Add(new Label { Text = category, AutoSize = true, Font = new Font("Segoe UI", 16, FontStyle.Bold), Margin = new Padding(0, 0, 0, 14) });

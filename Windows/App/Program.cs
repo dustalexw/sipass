@@ -10,9 +10,11 @@ internal static class Program {
                 ToolPaths.Bundled().EnsureAvailable();
                 using var form = new MainForm();
                 form.Show();
+                form.Size = new Size(1280, 820);
+                form.PerformLayout();
                 Application.DoEvents();
-                using var bitmap = new Bitmap(form.ClientSize.Width, form.ClientSize.Height);
-                form.DrawToBitmap(bitmap, form.ClientRectangle);
+                using var bitmap = new Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
                 bitmap.Save(Path.Combine(AppContext.BaseDirectory, "Windows-smoke.png"), System.Drawing.Imaging.ImageFormat.Png);
                 form.Hide();
                 using var image = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
