@@ -1,0 +1,134 @@
+name: Windows and macOS builds
+on:
+  push:
+    branches: [main]
+    paths: ['Windows/**', 'Sources/**', 'Tests/**', 'Package.swift', 'build.sh', 'AppIcon.icns', 'Assets/**', 'RELEASE-NOTES.md', '.github/workflows/build.yml']
+  pull_request:
+    paths: ['Windows/**', 'Sources/**', 'Tests/**', 'Package.swift', 'build.sh', 'AppIcon.icns', 'Assets/**', 'RELEASE-NOTES.md', '.github/workflows/build.yml']
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish this version for Windows and macOS after all checks pass (never overwrites an existing release)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+env:
+  # Single source for the release version; both build scripts stamp it into the apps.
+  VERSION: '2.1.1'
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.401'
+      - name: Build app and bundle verified tools
+        run: ./Windows/scripts/build.ps1 -Version $env:VERSION
+      - name: Test core and bundled media processing
+        run: |
+          $env:YTDLP_TEST_TOOLS = (Resolve-Path 'Windows/dist/YT-DLP Studio/tools').Path
+          dotnet run --project Windows/Tests/YtdlpStudio.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Windows tests failed.' }
+      - name: Start native Windows interface
+        run: |
+          $app = Resolve-Path 'Windows/dist/YT-DLP Studio/YTDLPStudio.exe'
+          $process = Start-Process $app -ArgumentList '--smoke-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            Get-Content 'Windows/dist/YT-DLP Studio/smoke-test-error.txt' -ErrorAction SilentlyContinue
+            throw 'Native UI smoke test failed.'
+          }
+      - name: Save native interface preview
+        uses: actions/upload-artifact@v7
+        with:
+          name: Windows-interface-preview
+          path: Windows/dist/YT-DLP Studio/Windows-smoke.png
+          if-no-files-found: error
+      - name: Package portable ZIP
+        run: |
+          Remove-Item 'Windows/dist/YT-DLP Studio/Windows-smoke.png'
+          Compress-Archive -Path 'Windows/dist/YT-DLP Studio' -DestinationPath "Windows/dist/YT-DLP-Studio-$env:VERSION-Windows-x64.zip"
+          Get-FileHash "Windows/dist/YT-DLP-Studio-$env:VERSION-Windows-x64.zip" -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v7
+        with:
+          name: YT-DLP-Studio-${{ env.VERSION }}-Windows-x64
+          path: Windows/dist/YT-DLP-Studio-${{ env.VERSION }}-Windows-x64.zip
+          retention-days: 30
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install yt-dlp and FFmpeg for integration tests
+        run: brew install yt-dlp ffmpeg
+      - name: Test
+        run: swift test
+      - name: Build universal app
+        run: ./build.sh universal
+      - name: Verify app bundle
+        run: |
+          APP="build/YT-DLP Studio.app"
+          archs=$(lipo -archs "$APP/Contents/MacOS/YTDLPStudio")
+          echo "Architectures: $archs"
+          [[ "$archs" == *arm64* && "$archs" == *x86_64* ]] || { echo "::error::Expected a universal arm64 + x86_64 binary"; exit 1; }
+          codesign --verify --deep --strict "$APP"
+          bundled=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
+          [[ "$bundled" == "$VERSION" ]] || { echo "::error::Info.plist says $bundled, expected $VERSION"; exit 1; }
+      - name: Launch smoke test
+        run: |
+          "build/YT-DLP Studio.app/Contents/MacOS/YTDLPStudio" & pid=$!
+          sleep 8
+          kill -0 $pid || { echo "::error::App exited during launch"; exit 1; }
+          kill $pid
+      - name: Package ZIP
+        run: |
+          # ditto keeps the code signature and bundle metadata intact.
+          ditto -c -k --keepParent "build/YT-DLP Studio.app" "YT-DLP-Studio-$VERSION-macOS.zip"
+          shasum -a 256 "YT-DLP-Studio-$VERSION-macOS.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: YT-DLP-Studio-${{ env.VERSION }}-macOS
+          path: YT-DLP-Studio-${{ env.VERSION }}-macOS.zip
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    # Runs only after both platform builds pass. If GitHub fails to assign this job a runner,
+    # use "Re-run failed jobs": the verified builds are reused, nothing is rebuilt.
+    needs: [windows, macos]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: YT-DLP-Studio-${{ env.VERSION }}-*
+          merge-multiple: true
+          path: package
+      - name: Publish Windows and macOS packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$VERSION"
+          win="package/YT-DLP-Studio-$VERSION-Windows-x64.zip"
+          mac="package/YT-DLP-Studio-$VERSION-macOS.zip"
+          ls -l package
+          [[ -f "$win" && -f "$mac" ]] || { echo "::error::Missing a platform package"; exit 1; }
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Published releases are never replaced; bump VERSION at the top of this workflow instead.
+            echo "::error::$tag is already published. Bump VERSION in .github/workflows/build.yml to release a new build."
+            exit 1
+          fi
+          gh release create "$tag" "$win" "$mac" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "YT-DLP Studio $VERSION — Windows and macOS" \
+            --notes-file RELEASE-NOTES.md --latest

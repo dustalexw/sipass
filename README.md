@@ -107,10 +107,14 @@ between launches.
 
 ## Build without a Mac toolchain
 
-Push this folder to a GitHub repository. `.github/workflows/build.yml` compiles the app on
-GitHub's macOS runners (universal binary) and runs the core tests on Linux. Download the
-finished `YT-DLP-Studio.zip` from the run's **Artifacts** section. The app is ad-hoc signed,
-so the first time, right-click it and choose **Open**.
+Push this folder to a GitHub repository. `.github/workflows/build.yml` builds and tests the
+universal macOS app and the Windows portable edition on GitHub's runners. Download
+`YT-DLP-Studio-<version>-macOS.zip` from the run's **Artifacts** section. The app is ad-hoc
+signed, so the first time, right-click it and choose **Open**.
+
+To publish a release with both builds, set `VERSION` at the top of the workflow, then run it
+manually on `main` with **Publish this version** enabled. It publishes only after both
+platforms pass and never overwrites an existing release.
 
 ## Tests
 

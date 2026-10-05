@@ -9,7 +9,8 @@ cd "$(dirname "$0")"
 APP_NAME="YT-DLP Studio"
 EXEC="YTDLPStudio"
 BUNDLE_ID="com.local.ytdlpstudio"
-VERSION="2.0.0"
+# CI passes VERSION from .github/workflows/build.yml.
+VERSION="${VERSION:-2.1.1}"
 
 ARCH_FLAGS=()
 if [[ "${1:-}" == "universal" ]]; then
@@ -37,7 +38,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
