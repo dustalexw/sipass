@@ -3,17 +3,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dustalexw/ytdlp-studio?style=for-the-badge&color=7e6eff&labelColor=1a1033"></a>
-  <a href="https://github.com/dustalexw/ytdlp-studio/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/dustalexw/ytdlp-studio/build.yml?branch=main&style=for-the-badge&label=build&labelColor=1a1033"></a>
+  <a href="https://github.com/dustalexw/sipass/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dustalexw/sipass?style=for-the-badge&color=7e6eff&labelColor=1a1033"></a>
+  <a href="https://github.com/dustalexw/sipass/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/dustalexw/sipass/build.yml?branch=main&style=for-the-badge&label=build&labelColor=1a1033"></a>
   <img alt="Platforms: macOS, Windows and Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-e650dc?style=for-the-badge&labelColor=1a1033">
 </p>
 
 <p align="center">
-  <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><b>Download for macOS</b></a>
+  <a href="https://github.com/dustalexw/sipass/releases/latest"><b>Download for macOS</b></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><b>Download for Windows</b></a>
+  <a href="https://github.com/dustalexw/sipass/releases/latest"><b>Download for Windows</b></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><b>Download for Linux</b></a>
+  <a href="https://github.com/dustalexw/sipass/releases/latest"><b>Download for Linux</b></a>
 </p>
 
 A native desktop front end for **yt-dlp** and **FFmpeg**, with SwiftUI on macOS,

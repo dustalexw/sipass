@@ -73,7 +73,7 @@ public sealed class SettingsWindow : ThemedWindow {
             cards.Children.Add(card);
         }
         var openData = Secondary("Open settings folder"); openData.Click += (_, _) => { try { Directory.CreateDirectory(AppPaths.DataDirectory); Shell.Open(AppPaths.DataDirectory); } catch (Exception) { } };
-        var updates = Secondary("Get app updates"); updates.Click += (_, _) => { try { Shell.Open("https://github.com/dustalexw/ytdlp-studio/releases/latest"); } catch (Exception) { } };
+        var updates = Secondary("Get app updates"); updates.Click += (_, _) => { try { Shell.Open("https://github.com/dustalexw/sipass/releases/latest"); } catch (Exception) { } };
         var done = Primary("Done"); done.Click += (_, _) => Close();
         TextBlock Heading(string text) => new() { Text = text, FontSize = 16, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 4, 0, 4) };
         SetBody(new StackPanel { Spacing = 10, Children = {
