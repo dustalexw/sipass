@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Builds "YT-DLP Studio.app" into ./build
+# Builds "Sipass.app" into ./build
 #   ./build.sh            native arch, release
 #   ./build.sh universal  arm64 + x86_64 (requires full Xcode)
 #   ./build.sh install    build, then copy to /Applications
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="YT-DLP Studio"
-EXEC="YTDLPStudio"
+APP_NAME="Sipass"
+EXEC="Sipass"
+# Kept from the app's former name so existing preferences carry over.
 BUNDLE_ID="com.local.ytdlpstudio"
 # CI passes VERSION from .github/workflows/build.yml.
 VERSION="${VERSION:-2.2.1}"

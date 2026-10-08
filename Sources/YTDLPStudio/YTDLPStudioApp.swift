@@ -29,7 +29,7 @@ struct YTDLPStudioApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("YT-DLP Studio") {
+        WindowGroup("Sipass") {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(tools)

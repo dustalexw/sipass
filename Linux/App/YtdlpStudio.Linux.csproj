@@ -2,8 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
-    <AssemblyName>YTDLPStudio</AssemblyName><RootNamespace>YtdlpStudio.Linux</RootNamespace><Version>2.2.1</Version>
-    <Company>YT-DLP Studio</Company><Product>YT-DLP Studio</Product>
+    <AssemblyName>Sipass</AssemblyName><RootNamespace>YtdlpStudio.Linux</RootNamespace><Version>2.2.1</Version>
+    <Company>Sipass</Company><Product>Sipass</Product>
     <Description>Linux video and audio downloader</Description>
     <ApplicationIcon>../../Windows/App/AppIcon.ico</ApplicationIcon>
     <BuiltInComInteropSupport>false</BuiltInComInteropSupport>

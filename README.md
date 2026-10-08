@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Assets/readme-header.png" alt="YT-DLP Studio — Every yt-dlp and FFmpeg feature, in a native desktop app" width="100%">
+  <img src="Assets/readme-header.png" alt="Sipass — Every yt-dlp and FFmpeg feature, in a native desktop app" width="100%">
 </p>
 
 <p align="center">
@@ -26,6 +26,9 @@ YouTube play mark, and an integrated download arrow, ships on every platform. Th
 1024px source is in `Assets/AppIcon.png`; `AppIcon.icns` contains the native macOS
 icon sizes and `Windows/App/AppIcon.ico` the Windows ones.
 
+Sipass was previously called YT-DLP Studio; settings and presets from earlier
+versions carry over.
+
 The interface takes its look from the icon on all three platforms: a deep-space
 backdrop, frosted panels with an iridescent edge, a compact link field and a glowing
 Download button. Choose **System**, **Light** or **Dark** under Settings → Appearance.
@@ -33,13 +36,13 @@ Download button. Choose **System**, **Light** or **Dark** under Settings → App
 ## Windows portable edition
 
 The Windows x64 edition includes the .NET desktop runtime, yt-dlp, FFmpeg, ffprobe
-and Deno. Extract the entire ZIP and open `YTDLPStudio.exe`; no dependencies need
+and Deno. Extract the entire ZIP and open `Sipass.exe`; no dependencies need
 to be installed separately. See [Windows instructions and build details](Windows/README.md).
 
 ## Linux portable edition
 
 The Linux x64 edition bundles the .NET runtime, yt-dlp, FFmpeg, ffprobe and Deno.
-Extract the `.tar.gz`, run `./YTDLPStudio`, and optionally `./install.sh` to add it to
+Extract the `.tar.gz`, run `./Sipass`, and optionally `./install.sh` to add it to
 your applications menu. See [Linux instructions and build details](Linux/README.md).
 
 ## macOS requirements
@@ -54,8 +57,8 @@ and `~/bin`. You can point it somewhere else in **Settings (⌘,)**.
 ## Build and run
 
 ```bash
-./build.sh            # → build/YT-DLP Studio.app
-open "build/YT-DLP Studio.app"
+./build.sh            # → build/Sipass.app
+open "build/Sipass.app"
 
 ./build.sh install    # also copies it to /Applications
 ./build.sh universal  # arm64 + x86_64 (needs full Xcode)
@@ -135,7 +138,7 @@ between launches.
 
 Push this folder to a GitHub repository. `.github/workflows/build.yml` builds and tests the
 universal macOS app and the Windows portable edition on GitHub's runners. Download
-`YT-DLP-Studio-<version>-macOS.zip` from the run's **Artifacts** section. The app is ad-hoc
+`Sipass-<version>-macOS.zip` from the run's **Artifacts** section. The app is ad-hoc
 signed, so the first time, right-click it and choose **Open**.
 
 To publish a release with both builds, set `VERSION` at the top of the workflow, then run it

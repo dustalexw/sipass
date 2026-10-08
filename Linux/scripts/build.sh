@@ -7,7 +7,7 @@ set -euo pipefail
 VERSION="${1:-${VERSION:-2.2.1}}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 repo="$(cd "$root/.." && pwd)"
-cache="$root/.cache"; dist="$root/dist"; package="$dist/YT-DLP Studio"
+cache="$root/.cache"; dist="$root/dist"; package="$dist/Sipass"
 tools="$package/tools"; licenses="$package/licenses"; lock="$root/dependencies.lock.json"
 mkdir -p "$cache" "$dist"; rm -rf "$package"; mkdir -p "$tools" "$licenses"
 
@@ -44,13 +44,13 @@ avalonia-LICENSE.txt https://raw.githubusercontent.com/AvaloniaUI/Avalonia/11.3.
 inter-font-LICENSE.txt https://raw.githubusercontent.com/rsms/inter/v4.0/LICENSE.txt
 LIST
 cp "$lock" "$root/THIRD-PARTY-NOTICES.md" "$licenses/"
-cp "$repo/Assets/AppIcon.png" "$package/ytdlp-studio.png"
-cp "$root/scripts/install.sh" "$package/install.sh"; chmod 755 "$package/install.sh" "$package/YTDLPStudio"
+cp "$repo/Assets/AppIcon.png" "$package/sipass.png"
+cp "$root/scripts/install.sh" "$package/install.sh"; chmod 755 "$package/install.sh" "$package/Sipass"
 cat > "$package/START-HERE.txt" <<TXT
-YT-DLP Studio $VERSION for Linux x64
+Sipass $VERSION for Linux x64
 
-Extract this entire folder, then run ./YTDLPStudio (or double-click it).
-Run ./install.sh once to add YT-DLP Studio to your applications menu; ./install.sh --uninstall removes it.
+Extract this entire folder, then run ./Sipass (or double-click it).
+Run ./install.sh once to add Sipass to your applications menu; ./install.sh --uninstall removes it.
 .NET, yt-dlp, FFmpeg, ffprobe and Deno are bundled; no separate installation or PATH configuration is required.
 Downloads default to ~/Downloads. Settings are saved under ~/.local/share/YTDLPStudio.
 Bundled tools and their licenses/source references are listed in licenses/dependencies.lock.json and licenses/THIRD-PARTY-NOTICES.md.
