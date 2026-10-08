@@ -1,10 +1,10 @@
 [CmdletBinding()]
-param([string]$Version = '2.2.1', [switch]$SkipPublish)
+param([string]$Version = '2.3.0', [switch]$SkipPublish)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $cache = Join-Path $root '.cache'
 $dist = Join-Path $root 'dist'
-$package = Join-Path $dist 'YT-DLP Studio'
+$package = Join-Path $dist 'Sipass'
 $tools = Join-Path $package 'tools'
 $licenses = Join-Path $package 'licenses'
 $lock = Get-Content (Join-Path $root 'dependencies.lock.json') -Raw | ConvertFrom-Json
@@ -52,9 +52,9 @@ Copy-Item (Join-Path $root 'dependencies.lock.json') (Join-Path $licenses 'depen
 Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.md') (Join-Path $licenses 'THIRD-PARTY-NOTICES.md')
 Copy-Item (Join-Path $root 'README.md') (Join-Path $package 'README.md')
 @"
-YT-DLP Studio $Version for Windows x64
+Sipass $Version for Windows x64
 
-Extract this entire folder before starting YTDLPStudio.exe. Do not move the EXE away from the other files.
+Extract this entire folder before starting Sipass.exe. Do not move the EXE away from the other files.
 .NET, yt-dlp, FFmpeg, ffprobe, and Deno are bundled; no separate installation or PATH configuration is required.
 Downloads default to your Downloads folder. Settings are saved under %LOCALAPPDATA%\YTDLPStudio.
 Bundled tools and their licenses/source references are listed in licenses/dependencies.lock.json and licenses/THIRD-PARTY-NOTICES.md.

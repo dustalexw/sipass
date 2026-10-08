@@ -4,6 +4,8 @@ import PackageDescription
 let package = Package(
     name: "YTDLPStudio",
     platforms: [.macOS(.v13)],
+    // The app ships as "Sipass"; the source target keeps its original name.
+    products: [.executable(name: "Sipass", targets: ["YTDLPStudio"])],
     targets: [
         .executableTarget(
             name: "YTDLPStudio",

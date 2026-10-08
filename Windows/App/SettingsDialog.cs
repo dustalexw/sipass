@@ -24,7 +24,7 @@ public sealed class SettingsDialog : Form {
         var links = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 14) };
         var data = new Button { Text = "Open settings folder", AutoSize = true, Margin = new Padding(0, 0, 8, 0) }; data.Click += (_, _) => openDataFolder();
         var updates = new Button { Text = "Get app updates", AutoSize = true };
-        updates.Click += (_, _) => Process.Start(new ProcessStartInfo("https://github.com/dustalexw/ytdlp-studio/releases/latest") { UseShellExecute = true });
+        updates.Click += (_, _) => Process.Start(new ProcessStartInfo("https://github.com/dustalexw/sipass/releases/latest") { UseShellExecute = true });
         links.Controls.AddRange([data, updates]); layout.Controls.Add(links);
         var done = new Button { Text = "Done", AutoSize = true, DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Right, MinimumSize = new Size(90, 0) };
         layout.Controls.Add(done); AcceptButton = done; CancelButton = done;

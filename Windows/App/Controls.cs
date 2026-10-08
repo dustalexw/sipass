@@ -173,25 +173,21 @@ public sealed class Segmented : PaintedButton {
     }
 }
 
-/// App icon plus "YT-DLP Studio", with "YT-DLP" in ribbon colours.
+/// App icon plus "Sipass" in ribbon colours.
 public sealed class BrandMark : PaintedControl {
     readonly Image? icon;
-    readonly Font bold = new("Segoe UI Black", 12.5f), regular = new("Segoe UI Semibold", 12.5f);
-    public BrandMark(Icon? appIcon) { icon = appIcon == null ? null : new Icon(appIcon, 64, 64).ToBitmap(); Size = new Size(190, 44); Margin = new Padding(0, 0, 10, 0); AccessibleName = "YT-DLP Studio"; }
+    readonly Font font = new("Segoe UI Black", 14f);
+    public BrandMark(Icon? appIcon) { icon = appIcon == null ? null : new Icon(appIcon, 64, 64).ToBitmap(); Size = new Size(130, 44); Margin = new Padding(0, 0, 10, 0); AccessibleName = "Sipass"; }
     protected override void OnPaint(PaintEventArgs e) {
         var g = e.Graphics; Theme.Smooth(g); g.InterpolationMode = InterpolationMode.HighQualityBicubic;
         int size = (int)S(30), y = (Height - size) / 2;
         if (icon != null) g.DrawImage(icon, new Rectangle(0, y, size, size));
-        int x = size + (int)S(9);
-        var first = TextRenderer.MeasureText(g, "YT-DLP", bold, Size.Empty, TextFormatFlags.NoPadding);
-        var textRect = new RectangleF(x, (Height - first.Height) / 2f, first.Width + 2, first.Height);
-        using (var ribbon = Theme.Ribbon(textRect)) using (var format = new StringFormat(StringFormat.GenericTypographic)) {
-            g.DrawString("YT-DLP", bold, ribbon, textRect.Location, format);
-            var studioRect = new PointF(x + first.Width + S(5), textRect.Y);
-            using var text = new SolidBrush(Theme.P.Text); g.DrawString("Studio", regular, text, studioRect, format);
-        }
+        var name = TextRenderer.MeasureText(g, "Sipass", font, Size.Empty, TextFormatFlags.NoPadding);
+        var textRect = new RectangleF(size + S(9), (Height - name.Height) / 2f, name.Width + 2, name.Height);
+        using var ribbon = Theme.Ribbon(textRect); using var format = new StringFormat(StringFormat.GenericTypographic);
+        g.DrawString("Sipass", font, ribbon, textRect.Location, format);
     }
-    protected override void Dispose(bool disposing) { if (disposing) { icon?.Dispose(); bold.Dispose(); regular.Dispose(); } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) { icon?.Dispose(); font.Dispose(); } base.Dispose(disposing); }
 }
 
 /// Rounded-square icon tile filled with a ribbon gradient, like System Settings.
