@@ -8,6 +8,8 @@ public static class AppPaths {
 public sealed record Preset(string Name, DownloadOptions Options);
 public sealed class AppSettings {
     public DownloadOptions Options { get; set; } = new();
+    /// "system", "light" or "dark"; shared by the Windows and Linux apps.
+    public string Appearance { get; set; } = "system";
     public List<Preset> Presets { get; set; } = [];
 }
 public sealed class SettingsStore {
@@ -50,5 +52,18 @@ public sealed class SettingsStore {
             Make("Shrink for sharing · HEVC 720p", o => { o.MaxResolution = "p1080"; o.EncodeEnabled = true; o.Encoder = "libx265"; o.Scale = "h720"; }),
             Make("Archive everything", o => { o.Container = "mkv"; o.WriteSubs = true; o.SubLangs = "all,-live_chat"; o.EmbedSubs = true; o.WriteInfoJSON = true; o.WriteDescription = true; o.WriteThumbnail = true; o.UseArchive = true; o.FilenameTemplate = "uploaderFolder"; })
         ];
+    }
+}
+/// Moves files to the freedesktop.org trash (~/.local/share/Trash) so "replace original" stays recoverable on Linux.
+public static class FreedesktopTrash {
+    public static void Move(string path) {
+        string data = Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } xdg ? xdg : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+        string files = Path.Combine(data, "Trash", "files"), info = Path.Combine(data, "Trash", "info");
+        Directory.CreateDirectory(files); Directory.CreateDirectory(info);
+        string name = Path.GetFileName(path), stem = Path.GetFileNameWithoutExtension(path), ext = Path.GetExtension(path);
+        for (int i = 2; File.Exists(Path.Combine(files, name)) || File.Exists(Path.Combine(info, name + ".trashinfo")); i++) name = $"{stem}.{i}{ext}";
+        string encoded = string.Join('/', Path.GetFullPath(path).Split('/').Select(Uri.EscapeDataString));
+        File.WriteAllText(Path.Combine(info, name + ".trashinfo"), $"[Trash Info]\nPath={encoded}\nDeletionDate={DateTime.Now:yyyy-MM-ddTHH:mm:ss}\n");
+        File.Move(path, Path.Combine(files, name));
     }
 }

@@ -1,176 +1,401 @@
 using System.Diagnostics;
 using System.Reflection;
-using System.Text.Json.Nodes;
 using YtdlpStudio.Core;
 namespace YtdlpStudio.Windows;
 
 public sealed class MainForm : Form {
-    readonly SettingsStore store = new();
-    readonly ToolPaths tools = ToolPaths.Bundled();
+    readonly AppSession session;
+    readonly SettingsStore store;
+    readonly ToolPaths tools;
     readonly DownloadQueue queue;
-    readonly TextBox urls = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, PlaceholderText = "Paste video or playlist links, one per line", AccessibleName = "Video links" };
-    readonly TextBox command = new() { ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Horizontal, WordWrap = false, Dock = DockStyle.Fill, Font = new Font("Consolas", 9), AccessibleName = "PowerShell download command" };
-    readonly ListBox categories = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false };
+    readonly TextBox urls = new() { Multiline = true, WordWrap = false, ScrollBars = ScrollBars.None, BorderStyle = BorderStyle.None, PlaceholderText = "Paste a link — or several, one per line", AccessibleName = "Video links", Font = new Font("Segoe UI", 10.5f) };
+    readonly TextBox command = new() { ReadOnly = true, BorderStyle = BorderStyle.None, Font = new Font("Consolas", 9), AccessibleName = "Download command", TabStop = false };
+    readonly ListBox categories = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false, DrawMode = DrawMode.OwnerDrawFixed, AccessibleName = "Option categories" };
+    readonly ListBox jobs = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false, DrawMode = DrawMode.OwnerDrawFixed, AccessibleName = "Download queue" };
     readonly OptionsPanel options;
-    readonly DataGridView grid = new() { Dock = DockStyle.Fill, AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells, ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoGenerateColumns = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false, RowHeadersVisible = false, BackgroundColor = SystemColors.Window, BorderStyle = BorderStyle.None };
-    readonly Label footer = new() { Dock = DockStyle.Fill, AutoSize = true, UseMnemonic = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, ForeColor = SystemColors.GrayText };
-    readonly Label commandNote = new() { AutoSize = true, UseMnemonic = false, ForeColor = SystemColors.GrayText };
-    readonly Button analyze, findComments, cancelSearch, download;
+    readonly Label footer = new() { Dock = DockStyle.Fill, AutoSize = true, UseMnemonic = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 8.5f), Margin = new Padding(6, 6, 0, 0) };
+    readonly Label commandNote = new() { AutoSize = true, UseMnemonic = false, Visible = false, Font = new Font("Segoe UI", 8.5f), Margin = new Padding(6, 8, 0, 0) };
+    readonly Label queueCount = new() { AutoSize = true, Font = new Font("Segoe UI Semibold", 8f), Padding = new Padding(6, 1, 6, 1), Margin = new Padding(6, 3, 0, 0), Visible = false };
+    readonly CardPanel pill = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, Radius = 22, Margin = new Padding(0, 0, 0, 0) };
+    readonly Segmented mode;
+    readonly ChipLabel summary = new();
+    readonly IconButton analyze, clearLinks, cancelJob, retryJob, revealJob, logJob;
+    readonly ChipButton findComments, cancelSearch;
+    readonly GlowButton download = new("Download");
+    readonly Panel emptyQueue = new() { Dock = DockStyle.Fill };
+    readonly ToolTip tips = new();
     readonly System.Windows.Forms.Timer timer = new() { Interval = 250 };
-    readonly Dictionary<string, string> selections = new();
     CancellationTokenSource? searchCancellation;
-    bool settingsDirty, closing, ready;
+    bool settingsDirty, closing, retiring;
     DateTime lastEdit;
     public DownloadOptions Current => store.Settings.Options;
+    public string LinkText => urls.Text;
     // Stamped by build.ps1 (-p:Version); strip the "+commit" suffix the SDK appends.
     static string AppVersion => Application.ProductVersion.Split('+')[0];
 
-    SplitContainer left = null!;
-    public MainForm() {
+    public MainForm(AppSession session, string links = "") {
+        this.session = session; store = session.Store; tools = session.Tools; queue = session.Queue;
+        var p = Theme.P;
         // Layout values below are written for 96 DPI; AutoScaleMode.Dpi scales them to the monitor (and on monitor changes).
         SuspendLayout(); AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi;
-        queue = new(tools, path => Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(path, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin));
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
         options = new OptionsPanel(OptionsChanged);
-        Text = "YT-DLP Studio " + AppVersion + " — Windows"; Font = new Font("Segoe UI", 10); Size = new Size(1280, 820); MinimumSize = new Size(900, 600); StartPosition = FormStartPosition.CenterScreen;
-        KeyPreview = true;
+        Text = "YT-DLP Studio " + AppVersion; Font = new Font("Segoe UI", 10); Size = new Size(1280, 820); MinimumSize = new Size(980, 640); StartPosition = FormStartPosition.CenterScreen;
+        KeyPreview = true; BackColor = p.Bottom; ForeColor = p.Text;
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(12) };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 165)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); root.RowStyles.Add(new RowStyle(SizeType.Absolute, 120)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); Controls.Add(root);
-        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3 };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 315));
-        header.RowStyles.Add(new RowStyle(SizeType.AutoSize)); header.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var title = new Label { Text = "YT-DLP Studio", AutoSize = true, Font = new Font("Segoe UI", 18, FontStyle.Bold) }; header.Controls.Add(title, 0, 0);
-        header.Controls.Add(urls, 0, 1);
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8, 0, 0, 0) };
-        download = Button("Download", StartDownload); download.Width = 290; download.Height = 34;
-        analyze = Button("Analyze formats…", () => _ = AnalyzeAsync()); analyze.Width = 290;
-        findComments = Button("Find comment chapters…", () => _ = FindCommentsAsync()); findComments.Width = 290;
-        actions.Controls.AddRange([download, analyze, findComments]); header.Controls.Add(actions, 1, 1); header.SetRowSpan(actions, 2);
-        var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-        toolbar.Controls.Add(Button("Paste links", () => { if (Clipboard.ContainsText()) urls.Text = urls.Text.Trim().Length == 0 ? Clipboard.GetText().Trim() : urls.Text.Trim() + Environment.NewLine + Clipboard.GetText().Trim(); }));
-        toolbar.Controls.Add(Button("Presets ▾", ShowPresets));
-        toolbar.Controls.Add(Button("Open download folder", () => OpenFolder(Current.OutputDirectory)));
-        cancelSearch = Button("Cancel search", () => searchCancellation?.Cancel()); cancelSearch.Visible = false; toolbar.Controls.Add(cancelSearch);
-        header.Controls.Add(toolbar, 0, 2); root.Controls.Add(header, 0, 0);
-        var split = new SplitContainer { Dock = DockStyle.Fill, Size = new Size(1230, 500), SplitterDistance = 720, Panel1MinSize = 480, Panel2MinSize = 300 };
-        left = new SplitContainer { Dock = DockStyle.Fill, Size = new Size(715, 500), SplitterDistance = 190, Panel1MinSize = 140, Panel2MinSize = 320, FixedPanel = FixedPanel.Panel1 };
-        left.Panel1.Controls.Add(categories); left.Panel2.Controls.Add(options); split.Panel1.Controls.Add(left);
-        foreach (var category in typeof(DownloadOptions).GetProperties().Select(p => p.GetCustomAttribute<SettingAttribute>()?.Category).Where(c => c != null).Distinct()) categories.Items.Add(category!);
-        categories.SelectedIndexChanged += (_, _) => { if (categories.SelectedItem is string category) options.ShowCategory(Current, category); };
-        var queuePanel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
-        queuePanel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); queuePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); queuePanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        queuePanel.Controls.Add(new Label { Text = "Download queue", AutoSize = true, Font = new Font("Segoe UI", 12, FontStyle.Bold) }, 0, 0);
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Title", HeaderText = "Video", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 100, MinimumWidth = 80 });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 55, MinimumWidth = 60 });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Progress", HeaderText = "Progress", AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Speed", HeaderText = "Speed", AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells });
-        grid.CellDoubleClick += (_, _) => ShowLog(); queuePanel.Controls.Add(grid, 0, 1);
-        var queueActions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-        queueActions.Controls.AddRange([Button("Cancel", () => { if (SelectedJob() is { } j) queue.Cancel(j); }), Button("Retry", () => { if (SelectedJob() is { } j) queue.Retry(j); }), Button("Show files", RevealFiles), Button("View log", ShowLog), Button("Clear finished", () => queue.ClearFinished()), Button("Cancel all", () => queue.CancelAll())]);
-        queuePanel.Controls.Add(queueActions, 0, 2); split.Panel2.Controls.Add(queuePanel); root.Controls.Add(split, 0, 1);
-        var preview = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 2, Padding = new Padding(0, 8, 0, 0) };
-        preview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); preview.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); preview.RowStyles.Add(new RowStyle(SizeType.AutoSize)); preview.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        preview.Controls.Add(commandNote, 0, 0); preview.SetColumnSpan(commandNote, 2); preview.Controls.Add(command, 0, 1);
-        preview.Controls.Add(Button("Copy command", () => { if (command.Text.Length > 0) Clipboard.SetText(command.Text); }), 1, 1); root.Controls.Add(preview, 0, 2); root.Controls.Add(footer, 0, 3);
-        urls.TextChanged += (_, _) => UpdateCommand(); timer.Tick += (_, _) => Tick(); timer.Start(); UpdateCommand();
+        Theme.StyleTitleBar(this);
+
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(16, 12, 16, 10), BackColor = Color.Transparent };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        Controls.Add(root);
+
+        // Row 1: brand, compact link field, Download.
+        var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0) };
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        top.Controls.Add(new BrandMark(Icon) { Anchor = AnchorStyles.Left }, 0, 0);
+        top.Controls.Add(pill, 1, 0);
+        download.Anchor = AnchorStyles.Right; download.Click += (_, _) => StartDownload(); tips.SetToolTip(download, "Add to queue (Ctrl+Enter)");
+        top.Controls.Add(download, 2, 0);
+        root.Controls.Add(top, 0, 0);
+
+        pill.Fill = p.Field; pill.Padding = new Padding(16, 6, 6, 6);
+        var field = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, BackColor = p.Field, Margin = new Padding(0) };
+        field.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); field.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (int i = 0; i < 3; i++) field.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        field.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        field.Controls.Add(new Label { Text = Theme.Glyph.Link, Font = Theme.Icons(11), ForeColor = Theme.Violet, AutoSize = true, Anchor = AnchorStyles.None, Margin = new Padding(0, 0, 8, 0) }, 0, 0);
+        urls.BackColor = p.Field; urls.ForeColor = p.Text; urls.Anchor = AnchorStyles.Left | AnchorStyles.Right; urls.Margin = new Padding(0); urls.Text = links;
+        field.Controls.Add(urls, 1, 0);
+        clearLinks = IconBtn(Theme.Glyph.Close, "Clear links", () => { urls.Clear(); urls.Focus(); }, 24, p.Field); clearLinks.Visible = false; clearLinks.Anchor = AnchorStyles.None;
+        var paste = IconBtn(Theme.Glyph.Paste, "Paste from clipboard", PasteLinks, 30); paste.Anchor = AnchorStyles.None;
+        analyze = IconBtn(Theme.Glyph.Search, "Analyze formats, chapters and playlist items (Ctrl+I)", () => _ = AnalyzeAsync(), 30); analyze.Anchor = AnchorStyles.None;
+        field.Controls.Add(clearLinks, 2, 0); field.Controls.Add(paste, 3, 0); field.Controls.Add(analyze, 4, 0);
+        pill.Controls.Add(field);
+        urls.KeyDown += (_, e) => {
+            // Enter adds to the queue; Shift+Enter starts a new line for another link.
+            if (e.KeyCode == Keys.Enter && !e.Shift) { e.SuppressKeyPress = true; if (download.Enabled) StartDownload(); }
+        };
+
+        // Row 2: download type, summary, actions.
+        var bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 12, 0, 14) };
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var left = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0), Anchor = AnchorStyles.Left };
+        mode = new Segmented([("video", "Video + Audio"), ("audio", "Audio only"), ("videoOnly", "Video only")], Current.Mode);
+        mode.Changed += value => { Current.Mode = value; OptionsChanged(); RefreshOptions(); };
+        left.Controls.AddRange([mode, summary]);
+        var right = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0), Anchor = AnchorStyles.Right };
+        cancelSearch = Chip(Theme.Glyph.Close, "Cancel search", () => searchCancellation?.Cancel()); cancelSearch.Visible = false;
+        findComments = Chip(Theme.Glyph.Comment, "Comment chapters", () => _ = FindCommentsAsync()); tips.SetToolTip(findComments, "Find chapter timestamps in the first video's top comments");
+        var presets = Chip(Theme.Glyph.Sliders, "Presets", ShowPresets); presets.Accent = true;
+        var settings = IconBtn(Theme.Glyph.Gear, "Settings (Ctrl+,)", ShowSettings, 32); settings.Margin = new Padding(8, 0, 0, 0);
+        right.Controls.AddRange([cancelSearch, findComments, presets, settings]);
+        bar.Controls.Add(left, 0, 0); bar.Controls.Add(right, 1, 0);
+        root.Controls.Add(bar, 0, 1);
+
+        // Row 3: options card and queue card.
+        var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0) };
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62)); body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+        var optionsCard = new CardPanel { Dock = DockStyle.Fill, Padding = new Padding(8), Margin = new Padding(0, 0, 7, 0) };
+        var optionsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = p.Panel, Margin = new Padding(0) };
+        optionsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 236)); optionsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 1)); optionsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        categories.BackColor = p.Panel; categories.ForeColor = p.Text; categories.Margin = new Padding(0, 0, 8, 0);
+        optionsLayout.Controls.Add(categories, 0, 0);
+        optionsLayout.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = p.Hairline, Margin = new Padding(0, 4, 0, 4) }, 1, 0);
+        options.Margin = new Padding(0); optionsLayout.Controls.Add(options, 2, 0);
+        optionsCard.Controls.Add(optionsLayout); body.Controls.Add(optionsCard, 0, 0);
+        foreach (var category in typeof(DownloadOptions).GetProperties().Select(x => x.GetCustomAttribute<SettingAttribute>()?.Category).Where(c => c != null).Distinct()) categories.Items.Add(category!);
+        categories.DrawItem += DrawCategory;
+        categories.SelectedIndexChanged += (_, _) => RefreshOptions();
+
+        var queueCard = new CardPanel { Dock = DockStyle.Fill, Padding = new Padding(8), Margin = new Padding(7, 0, 0, 0) };
+        var queueLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = p.Panel, Margin = new Padding(0) };
+        queueLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); queueLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 1));
+        queueLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); queueLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var queueHeader = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, AutoSize = true, BackColor = p.Panel, Margin = new Padding(6, 2, 2, 6) };
+        queueHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); queueHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); queueHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var titleRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = p.Panel, Margin = new Padding(0), Anchor = AnchorStyles.Left };
+        titleRow.Controls.Add(new Label { Text = "Queue", AutoSize = true, Font = new Font("Segoe UI Semibold", 11f), ForeColor = p.Text, Margin = new Padding(0) });
+        queueCount.BackColor = Theme.Violet; queueCount.ForeColor = Color.White; titleRow.Controls.Add(queueCount);
+        var queueTools = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = p.Panel, Margin = new Padding(0), Anchor = AnchorStyles.Right };
+        queueTools.Controls.AddRange([
+            IconBtn(Theme.Glyph.Folder, "Open download folder", () => OpenFolder(Current.OutputDirectory), 30),
+            IconBtn(Theme.Glyph.ClearAll, "Clear finished", () => { queue.ClearFinished(); SyncJobs(); }, 30),
+            IconBtn(Theme.Glyph.Stop, "Cancel all", () => queue.CancelAll(), 30)]);
+        queueHeader.Controls.Add(titleRow, 0, 0); queueHeader.Controls.Add(queueTools, 2, 0);
+        queueLayout.Controls.Add(queueHeader, 0, 0);
+        queueLayout.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = p.Hairline, Margin = new Padding(0) }, 0, 1);
+        var jobsHost = new Panel { Dock = DockStyle.Fill, BackColor = p.Panel, Margin = new Padding(0, 4, 0, 4) };
+        jobs.BackColor = p.Panel; jobs.ForeColor = p.Text; jobs.DrawItem += DrawJob; jobs.DoubleClick += (_, _) => ShowLog();
+        jobs.SelectedIndexChanged += (_, _) => UpdateJobActions();
+        jobs.MouseDown += (_, e) => { if (e.Button == MouseButtons.Right) { int i = jobs.IndexFromPoint(e.Location); if (i >= 0) jobs.SelectedIndex = i; } };
+        jobs.ContextMenuStrip = JobMenu();
+        emptyQueue.BackColor = p.Panel; emptyQueue.Paint += PaintEmptyQueue; emptyQueue.Resize += (_, _) => emptyQueue.Invalidate();
+        jobsHost.Controls.Add(jobs); jobsHost.Controls.Add(emptyQueue); emptyQueue.BringToFront();
+        queueLayout.Controls.Add(jobsHost, 0, 2);
+        var jobActions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = p.Panel, Margin = new Padding(4, 0, 0, 0), Anchor = AnchorStyles.Left };
+        logJob = IconBtn(Theme.Glyph.Log, "View log", ShowLog, 30); revealJob = IconBtn(Theme.Glyph.Folder, "Show files", RevealFiles, 30);
+        retryJob = IconBtn(Theme.Glyph.Retry, "Retry", () => { if (SelectedJob() is { } j) queue.Retry(j); }, 30);
+        cancelJob = IconBtn(Theme.Glyph.Close, "Cancel", () => { if (SelectedJob() is { } j) queue.Cancel(j); }, 30);
+        jobActions.Controls.AddRange([logJob, revealJob, retryJob, cancelJob]);
+        queueLayout.Controls.Add(jobActions, 0, 3);
+        queueCard.Controls.Add(queueLayout); body.Controls.Add(queueCard, 1, 0);
+        root.Controls.Add(body, 0, 2);
+
+        // Rows 4–6: note, command preview, footer.
+        commandNote.ForeColor = p.Secondary; root.Controls.Add(commandNote, 0, 3);
+        var commandCard = new CardPanel { Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 40, Radius = 20, Fill = p.Command, Padding = new Padding(14, 4, 5, 4), Margin = new Padding(0, 8, 0, 0) };
+        var commandLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = p.Command, Margin = new Padding(0) };
+        commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); commandLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        commandLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        commandLayout.Controls.Add(new Label { Text = Theme.Glyph.Chevron, Font = Theme.Icons(9), ForeColor = Theme.Violet, AutoSize = true, Anchor = AnchorStyles.None, Margin = new Padding(0, 0, 8, 0) }, 0, 0);
+        command.BackColor = p.Command; command.ForeColor = p.Secondary; command.Anchor = AnchorStyles.Left | AnchorStyles.Right; command.Margin = new Padding(0);
+        commandLayout.Controls.Add(command, 1, 0);
+        IconButton copy = null!;
+        copy = IconBtn(Theme.Glyph.Copy, "Copy command", () => {
+            if (command.Text.Length == 0) return;
+            Clipboard.SetText(command.Text); copy.Glyph = Theme.Glyph.Check; copy.Invalidate();
+            var reset = new System.Windows.Forms.Timer { Interval = 1500 }; reset.Tick += (_, _) => { reset.Dispose(); if (!copy.IsDisposed) { copy.Glyph = Theme.Glyph.Copy; copy.Invalidate(); } }; reset.Start();
+        }, 30, p.Command);
+        copy.Anchor = AnchorStyles.None; commandLayout.Controls.Add(copy, 2, 0);
+        commandCard.Controls.Add(commandLayout); root.Controls.Add(commandCard, 0, 4);
+        footer.ForeColor = p.Secondary; footer.Text = session.ToolSummary; root.Controls.Add(footer, 0, 5);
+
+        urls.TextChanged += (_, _) => { FitLinkField(); UpdateCommand(); }; timer.Tick += (_, _) => Tick(); timer.Start();
+        FitLinkField(); UpdateCommand(); SyncJobs();
         ResumeLayout(false); PerformLayout();
         // Build the options after DPI scaling so OptionsPanel's own DPI-aware sizes are not scaled twice.
         categories.SelectedIndex = 0;
-        Load += (_, _) => { FitToScreen(); SizeCategoryList(); };
-        DpiChanged += (_, _) => BeginInvoke(SizeCategoryList);
+        Load += (_, _) => { FitToScreen(); SizeLists(); };
+        DpiChanged += (_, _) => BeginInvoke(() => { SizeLists(); FitLinkField(); });
         Shown += async (_, _) => {
+            if (session.Ready) { UpdateButtons(); return; }
             try {
-                tools.EnsureAvailable(); ready = true;
+                tools.EnsureAvailable(); session.Ready = true;
                 var yt = await ProcessRunner.RunAsync(tools.Ytdlp, ["--version"]);
-                footer.Text = "Bundled yt-dlp " + yt.Stdout.Trim() + " · FFmpeg and Deno included · Windows x64 · " + AppVersion;
-                if (store.LoadWarning != null) MessageBox.Show(this, store.LoadWarning, "Settings restored");
-            } catch (Exception error) { footer.Text = error.Message; }
-            UpdateButtons();
+                session.ToolSummary = "Bundled yt-dlp " + yt.Stdout.Trim() + " · FFmpeg and Deno included · Windows x64 · " + AppVersion;
+                if (!IsDisposed) footer.Text = session.ToolSummary;
+                if (store.LoadWarning != null && !session.WarningShown) { session.WarningShown = true; MessageBox.Show(this, store.LoadWarning, "Settings restored"); }
+            } catch (Exception error) { if (!IsDisposed) footer.Text = error.Message; }
+            if (!IsDisposed) UpdateButtons();
         };
         FormClosing += async (_, e) => {
-            if (closing) return; e.Cancel = true; closing = true; timer.Stop(); searchCancellation?.Cancel();
+            if (closing || retiring) return; e.Cancel = true; closing = true; timer.Stop(); searchCancellation?.Cancel();
             try { store.Save(); await queue.StopAsync(); } catch (Exception error) { MessageBox.Show(error.Message, "Closing YT-DLP Studio"); }
             Close();
         };
     }
+
+    /// Closes this window without stopping downloads; used when the window is rebuilt for a new appearance.
+    public void Retire() { retiring = true; timer.Stop(); searchCancellation?.Cancel(); if (settingsDirty) try { store.Save(); } catch (IOException) { } Close(); }
+
+    protected override void OnPaintBackground(PaintEventArgs e) => Theme.PaintBackdrop(e.Graphics, ClientRectangle);
+    protected override void OnResize(EventArgs e) { base.OnResize(e); Invalidate(); }
+
+    IconButton IconBtn(string glyph, string label, Action action, int size, Color? surface = null) {
+        var b = new IconButton(glyph, label, size) { Surface = surface }; b.Click += (_, _) => { if (b.Enabled) action(); }; tips.SetToolTip(b, label); return b;
+    }
+    ChipButton Chip(string glyph, string text, Action action) { var b = new ChipButton(glyph, text); b.Width = b.GetPreferredSize(Size.Empty).Width; b.Click += (_, _) => { if (b.Enabled) action(); }; return b; }
+
     void FitToScreen() {
         var area = Screen.FromControl(this).WorkingArea;
         if (Width > area.Width || Height > area.Height) { Bounds = area; WindowState = FormWindowState.Maximized; }
     }
-    void SizeCategoryList() {
-        int widest = categories.Items.Cast<string>().Select(c => TextRenderer.MeasureText(c, categories.Font).Width).DefaultIfEmpty(0).Max();
-        int wanted = widest + SystemInformation.VerticalScrollBarWidth + LogicalToDeviceUnits(16);
-        int max = left.Width - left.Panel2MinSize - left.SplitterWidth;
-        if (max > left.Panel1MinSize) left.SplitterDistance = Math.Clamp(wanted, left.Panel1MinSize, max);
+    void SizeLists() { categories.ItemHeight = LogicalToDeviceUnits(40); jobs.ItemHeight = LogicalToDeviceUnits(68); }
+    /// Keeps the link field one line tall, growing to four lines when several links are pasted.
+    void FitLinkField() {
+        int lines = Math.Clamp(urls.Lines.Length, 1, 4);
+        urls.Height = lines * urls.Font.Height + LogicalToDeviceUnits(2);
+        pill.Height = Math.Max(LogicalToDeviceUnits(44), urls.Height + pill.Padding.Vertical + LogicalToDeviceUnits(4));
+        download.Height = LogicalToDeviceUnits(46);
+        clearLinks.Visible = urls.TextLength > 0;
     }
-    static Button Button(string text, Action action) { var b = new Button { Text = text, AutoSize = true, Padding = new Padding(6, 2, 6, 2) }; b.Click += (_, _) => action(); return b; }
+    void PasteLinks() {
+        if (!Clipboard.ContainsText()) return;
+        urls.Text = urls.Text.Trim().Length == 0 ? Clipboard.GetText().Trim() : urls.Text.Trim() + Environment.NewLine + Clipboard.GetText().Trim();
+        urls.SelectionStart = urls.TextLength;
+    }
     string[] Links => urls.Lines.Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
-    void OptionsChanged() { settingsDirty = true; lastEdit = DateTime.UtcNow; queue.MaxConcurrent = Current.MaxConcurrent; UpdateCommand(); }
+    void OptionsChanged() { settingsDirty = true; lastEdit = DateTime.UtcNow; queue.MaxConcurrent = Current.MaxConcurrent; if (mode.Value != Current.Mode) mode.Value = Current.Mode; UpdateCommand(); }
+    void RefreshOptions() { if (categories.SelectedItem is string category) options.ShowCategory(Current, category); categories.Invalidate(); }
     void UpdateCommand() {
         try {
             command.Text = CommandBuilder.Display(tools.Ytdlp, CommandBuilder.Arguments(Current, Links.Length > 0 ? Links : ["<URL>"], tools));
-            commandNote.Text = Current.ChapterSource == "youtube" ? "PowerShell download command" : "Comment chapters are prepared by the app; this command shows download options only.";
-        } catch (Exception error) { command.Text = ""; commandNote.Text = error.Message; }
+            commandNote.Visible = Current.ChapterSource != "youtube";
+            commandNote.Text = "Comment chapters are prepared by the app before downloading. The command below shows download options only.";
+        } catch (Exception error) { command.Text = ""; commandNote.Visible = true; commandNote.Text = error.Message; }
+        summary.Text = Summary();
+        int count = Links.Length; download.Text = count > 1 ? $"Download {count}" : "Download";
+        download.Width = TextRenderer.MeasureText(download.Text, download.Font).Width + LogicalToDeviceUnits(64);
         UpdateButtons();
     }
-    void UpdateButtons() { download.Enabled = ready && Links.Length > 0; analyze.Enabled = ready && Links.Length > 0 && searchCancellation == null; findComments.Enabled = analyze.Enabled; }
+    string Summary() {
+        var o = Current;
+        if (o.Mode == "audio") return o.AudioFormat == "best" ? "Original audio" : o.AudioFormat.ToUpperInvariant() + (o.AudioFormat is "flac" or "alac" or "wav" ? "" : " · " + Choice(nameof(DownloadOptions.AudioQuality), o.AudioQuality));
+        var parts = new List<string> { o.Container.ToUpperInvariant(), o.MaxResolution == "best" ? "Best" : Choice(nameof(DownloadOptions.MaxResolution), o.MaxResolution) };
+        if (o.EncodeEnabled) parts.Add("re-encode");
+        return string.Join(" · ", parts);
+    }
+    static string Choice(string property, string value) {
+        var setting = typeof(DownloadOptions).GetProperty(property)?.GetCustomAttribute<SettingAttribute>();
+        return setting == null ? value : OptionsPanel.ParseChoices(setting.Choices).FirstOrDefault(c => c.Value == value)?.Label ?? value;
+    }
+    void UpdateButtons() {
+        bool ready = session.Ready, any = Links.Length > 0;
+        download.Enabled = ready && any; analyze.Enabled = ready && any && searchCancellation == null; findComments.Enabled = analyze.Enabled;
+        cancelSearch.Visible = searchCancellation != null;
+    }
+    void UpdateJobActions() {
+        var job = SelectedJob();
+        logJob.Enabled = job != null; revealJob.Enabled = job != null && (job.OutputFiles.Length > 0 || job.Done);
+        retryJob.Enabled = job?.Done == true; cancelJob.Enabled = job != null && !job.Done;
+    }
+    void SyncJobs() {
+        var current = queue.Jobs; var selected = SelectedJob();
+        if (!current.SequenceEqual(jobs.Items.Cast<DownloadJob>())) {
+            jobs.BeginUpdate(); jobs.Items.Clear(); jobs.Items.AddRange(current.Cast<object>().ToArray());
+            if (selected != null && current.Contains(selected)) jobs.SelectedItem = selected;
+            jobs.EndUpdate();
+        } else jobs.Invalidate();
+        emptyQueue.Visible = current.Length == 0;
+        queueCount.Visible = current.Length > 0; queueCount.Text = current.Length.ToString();
+        UpdateJobActions();
+    }
     void Tick() {
-        var jobs = queue.Jobs; var selectedId = SelectedJob()?.Id;
-        var existing = grid.Rows.Cast<DataGridViewRow>().Where(r => r.Tag is DownloadJob).ToDictionary(r => ((DownloadJob)r.Tag!).Id);
-        foreach (var job in jobs) {
-            if (!existing.TryGetValue(job.Id, out var row)) { int index = grid.Rows.Add(); row = grid.Rows[index]; row.Tag = job; }
-            row.Cells[0].Value = job.Title; row.Cells[1].Value = job.Stage; row.Cells[2].Value = (job.Progress * 100).ToString("0") + "%"; row.Cells[3].Value = job.Speed;
-            foreach (DataGridViewCell cell in row.Cells) cell.ToolTipText = job.Stage + (job.Eta.Length > 0 ? " · ETA " + job.Eta : "");
-            row.DefaultCellStyle.ForeColor = job.State == JobState.Failed ? Color.Firebrick : SystemColors.ControlText;
-        }
-        foreach (var row in grid.Rows.Cast<DataGridViewRow>().ToArray()) if (row.Tag is DownloadJob job && !jobs.Contains(job)) grid.Rows.Remove(row);
-        if (selectedId != null) foreach (DataGridViewRow row in grid.Rows) if (((DownloadJob)row.Tag!).Id == selectedId) row.Selected = true;
+        SyncJobs();
         if (settingsDirty && DateTime.UtcNow - lastEdit > TimeSpan.FromSeconds(1)) {
             try { store.Save(); settingsDirty = false; } catch (IOException error) { footer.Text = "Could not save settings: " + error.Message; }
         }
     }
-    DownloadJob? SelectedJob() => grid.SelectedRows.Count > 0 ? grid.SelectedRows[0].Tag as DownloadJob : null;
+    DownloadJob? SelectedJob() => jobs.SelectedItem as DownloadJob;
+
+    void DrawCategory(object? sender, DrawItemEventArgs e) {
+        if (e.Index < 0) return;
+        var g = e.Graphics; Theme.Smooth(g); float scale = DeviceDpi / 96f;
+        using (var bg = new SolidBrush(Theme.P.Panel)) g.FillRectangle(bg, e.Bounds);
+        string category = (string)categories.Items[e.Index];
+        bool selected = (e.State & DrawItemState.Selected) != 0;
+        var row = RectangleF.Inflate(e.Bounds, -3 * scale, -2 * scale);
+        if (selected) { using var shape = Theme.Rounded(row, 9 * scale); using var fill = new SolidBrush(Theme.P.Selection); g.FillPath(fill, shape); }
+        var (glyph, colors) = Theme.Category(category);
+        float tile = 26 * scale; var tileRect = new RectangleF(row.X + 8 * scale, row.Y + (row.Height - tile) / 2, tile, tile);
+        Tiles.Draw(g, tileRect, glyph, colors, scale);
+        using var font = new Font("Segoe UI", 10f, selected ? FontStyle.Bold : FontStyle.Regular);
+        var text = Rectangle.Round(new RectangleF(tileRect.Right + 11 * scale, row.Y, row.Right - tileRect.Right - 14 * scale, row.Height));
+        TextRenderer.DrawText(g, category, font, text, Theme.P.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+    }
+    static (string Glyph, Color[] Colors) StatusTile(DownloadJob job) => job.State switch {
+        JobState.Queued => (Theme.Glyph.Clock, [Color.FromArgb(120, 120, 135), Color.FromArgb(78, 78, 92)]),
+        JobState.Starting or JobState.Downloading => (Theme.Glyph.Download, [Theme.Blue, Theme.Cyan]),
+        JobState.Processing when job.Stage.StartsWith("Encoding") => (Theme.Glyph.Bolt, [Theme.Ember, Theme.Flame]),
+        JobState.Processing => (Theme.Glyph.Sync, [Theme.Violet, Theme.Pink]),
+        JobState.Finished => (Theme.Glyph.Check, [Theme.Mint, Theme.Cyan]),
+        JobState.Warning => (Theme.Glyph.Warning, [Theme.Flame, Color.FromArgb(240, 200, 60)]),
+        JobState.Failed => (Theme.Glyph.Close, [Theme.Ember, Theme.Pink]),
+        _ => (Theme.Glyph.Stop, [Color.FromArgb(120, 120, 135), Color.FromArgb(78, 78, 92)])
+    };
+    void DrawJob(object? sender, DrawItemEventArgs e) {
+        if (e.Index < 0 || jobs.Items[e.Index] is not DownloadJob job) return;
+        var g = e.Graphics; Theme.Smooth(g); float scale = DeviceDpi / 96f;
+        using (var bg = new SolidBrush(Theme.P.Panel)) g.FillRectangle(bg, e.Bounds);
+        bool selected = (e.State & DrawItemState.Selected) != 0;
+        var row = RectangleF.Inflate(e.Bounds, -3 * scale, -2 * scale);
+        if (selected) { using var shape = Theme.Rounded(row, 10 * scale); using var fill = new SolidBrush(Theme.P.Selection); g.FillPath(fill, shape); }
+        else if (e.Index < jobs.Items.Count - 1) { using var line = new Pen(Theme.P.Hairline); g.DrawLine(line, row.X + 50 * scale, e.Bounds.Bottom - 1, row.Right - 8 * scale, e.Bounds.Bottom - 1); }
+        var (glyph, colors) = StatusTile(job);
+        float tile = 32 * scale; var tileRect = new RectangleF(row.X + 8 * scale, row.Y + 10 * scale, tile, tile);
+        Tiles.Draw(g, tileRect, glyph, colors, scale);
+        float x = tileRect.Right + 12 * scale, width = row.Right - x - 10 * scale;
+        string detail = job.State == JobState.Downloading ? string.Join("  ·  ", new[] { (job.Progress * 100).ToString("0") + "%", job.Speed, job.Eta.Length > 0 ? "ETA " + job.Eta : "" }.Where(s => s.Length > 0)) : "";
+        using var titleFont = new Font("Segoe UI Semibold", 10f); using var small = new Font("Segoe UI", 8.5f);
+        int detailWidth = detail.Length > 0 ? TextRenderer.MeasureText(g, detail, small).Width : 0;
+        TextRenderer.DrawText(g, job.Title, titleFont, Rectangle.Round(new RectangleF(x, row.Y + 7 * scale, width, 22 * scale)), Theme.P.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        var stageColor = job.State switch { JobState.Failed => Theme.Ember, JobState.Warning => Theme.Flame, JobState.Finished => Theme.Mint, _ => Theme.P.Secondary };
+        TextRenderer.DrawText(g, job.Stage, small, Rectangle.Round(new RectangleF(x, row.Y + 29 * scale, width - detailWidth - 8 * scale, 18 * scale)), stageColor, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        if (detail.Length > 0) TextRenderer.DrawText(g, detail, small, Rectangle.Round(new RectangleF(row.Right - detailWidth - 10 * scale, row.Y + 29 * scale, detailWidth, 18 * scale)), Theme.P.Secondary, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        if (job.Active) {
+            var track = new RectangleF(x, row.Bottom - 12 * scale, width, 4 * scale);
+            using (var shape = Theme.Rounded(track, track.Height / 2)) using (var fill = new SolidBrush(Theme.P.Hairline)) g.FillPath(fill, shape);
+            RectangleF bar;
+            if (job.State == JobState.Downloading && job.Progress > 0) bar = new RectangleF(track.X, track.Y, Math.Max(track.Height, track.Width * (float)job.Progress), track.Height);
+            else { float phase = (Environment.TickCount64 % 1600) / 1600f, w = track.Width * 0.3f; bar = new RectangleF(track.X + (track.Width - w) * (0.5f - 0.5f * MathF.Cos(phase * MathF.Tau)), track.Y, w, track.Height); }
+            using var barShape = Theme.Rounded(bar, bar.Height / 2); using var ribbon = Theme.Ribbon(track); g.FillPath(ribbon, barShape);
+        }
+    }
+    void PaintEmptyQueue(object? sender, PaintEventArgs e) {
+        var g = e.Graphics; Theme.Smooth(g); float scale = DeviceDpi / 96f;
+        var area = emptyQueue.ClientRectangle; float ring = 62 * scale;
+        var center = new PointF(area.Width / 2f, area.Height / 2f - 40 * scale);
+        using (var glow = new System.Drawing.Drawing2D.GraphicsPath()) {
+            glow.AddEllipse(center.X - ring, center.Y - ring, ring * 2, ring * 2);
+            using var brush = new System.Drawing.Drawing2D.PathGradientBrush(glow) { CenterColor = Color.FromArgb(Theme.P.Dark ? 70 : 45, Theme.Violet), SurroundColors = [Color.FromArgb(0, Theme.Violet)] };
+            g.FillPath(brush, glow);
+        }
+        var circle = new RectangleF(center.X - ring / 2, center.Y - ring / 2, ring, ring);
+        using (var pen = new Pen(Theme.Ribbon(circle, 45), 1.6f * scale)) g.DrawEllipse(pen, circle);
+        using (var icons = Theme.Icons(20)) TextRenderer.DrawText(g, Theme.Glyph.Download, icons, Rectangle.Round(circle), Theme.Violet, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        using var heading = new Font("Segoe UI Semibold", 12f); using var body = new Font("Segoe UI", 9.5f);
+        var headingRect = new Rectangle(0, (int)(circle.Bottom + 16 * scale), area.Width, (int)(26 * scale));
+        TextRenderer.DrawText(g, "Nothing queued", heading, headingRect, Theme.P.Text, TextFormatFlags.HorizontalCenter);
+        TextRenderer.DrawText(g, "Paste a link above and press Download.\nAnalyze shows every available format first.", body,
+            new Rectangle(0, headingRect.Bottom + (int)(6 * scale), area.Width, (int)(44 * scale)), Theme.P.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.WordBreak);
+    }
+    ContextMenuStrip JobMenu() {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("View log", null, (_, _) => ShowLog());
+        menu.Items.Add("Show files", null, (_, _) => RevealFiles());
+        menu.Items.Add("Copy link", null, (_, _) => { if (SelectedJob() is { } j) Clipboard.SetText(j.Url); });
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Retry", null, (_, _) => { if (SelectedJob() is { } j) queue.Retry(j); });
+        menu.Items.Add("Cancel", null, (_, _) => { if (SelectedJob() is { } j) queue.Cancel(j); });
+        return menu;
+    }
+
     void StartDownload() {
-        try { queue.MaxConcurrent = Current.MaxConcurrent; queue.Enqueue(Links, Current, selections); urls.Clear(); }
+        try { queue.MaxConcurrent = Current.MaxConcurrent; queue.Enqueue(Links, Current, session.Selections); urls.Clear(); SyncJobs(); }
         catch (Exception error) { Error(error); }
     }
     async Task AnalyzeAsync() {
         if (Links.FirstOrDefault() is not { } url || searchCancellation != null) return;
-        var o = Current.Clone(); searchCancellation = new(); cancelSearch.Visible = true; UpdateButtons(); footer.Text = "Analyzing video…";
+        var o = Current.Clone(); searchCancellation = new(); UpdateButtons(); footer.Text = "Analyzing video…";
         try {
             var info = await CommentChapters.FetchAsync(url, o, tools, false, preview: true, cancellation: searchCancellation.Token);
             using var dialog = new FormatDialog(info);
-            if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedFormat is { Length: > 0 } format) { Current.CustomFormat = format; OptionsChanged(); if (categories.SelectedItem is string category) options.ShowCategory(Current, category); }
+            if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedFormat is { Length: > 0 } format) { Current.CustomFormat = format; OptionsChanged(); RefreshOptions(); }
+            footer.Text = session.ToolSummary;
         } catch (OperationCanceledException) { footer.Text = "Analysis cancelled."; } catch (Exception error) { Error(error); }
-        finally { searchCancellation.Dispose(); searchCancellation = null; cancelSearch.Visible = false; UpdateButtons(); }
+        finally { searchCancellation.Dispose(); searchCancellation = null; if (!IsDisposed) UpdateButtons(); }
     }
     async Task FindCommentsAsync() {
         if (Links.FirstOrDefault() is not { } url || searchCancellation != null) return;
-        var o = Current.Clone(); searchCancellation = new(); cancelSearch.Visible = true; UpdateButtons(); footer.Text = "Searching the first video's top 200 comments…";
+        var o = Current.Clone(); searchCancellation = new(); UpdateButtons(); footer.Text = "Searching the first video's top 200 comments…";
         try {
             var info = await CommentChapters.PreviewAsync(url, o, tools, searchCancellation.Token);
             using var dialog = new CommentDialog(info);
             if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Selected is { } chosen) {
-                selections[info.VideoId] = chosen.Id;
+                session.Selections[info.VideoId] = chosen.Id;
                 if (Current.ChapterSource == "youtube") Current.ChapterSource = "comments";
                 footer.Text = $"Selected {chosen.Chapters.Count} chapters from {chosen.Author} for {info.Title}.";
-                categories.SelectedItem = "Chapters & SponsorBlock"; options.ShowCategory(Current, "Chapters & SponsorBlock"); OptionsChanged();
+                categories.SelectedItem = "Chapters & SponsorBlock"; RefreshOptions(); OptionsChanged();
             }
         } catch (OperationCanceledException) { footer.Text = "Comment search cancelled."; } catch (Exception error) { Error(error); }
-        finally { searchCancellation.Dispose(); searchCancellation = null; cancelSearch.Visible = false; UpdateButtons(); }
+        finally { searchCancellation.Dispose(); searchCancellation = null; if (!IsDisposed) UpdateButtons(); }
     }
     void ShowPresets() {
         var menu = new ContextMenuStrip();
-        void Apply(Preset p) { store.Apply(p); OptionsChanged(); if (categories.SelectedItem is string category) options.ShowCategory(Current, category); }
+        void Apply(Preset p) { store.Apply(p); OptionsChanged(); RefreshOptions(); }
         foreach (var preset in SettingsStore.BuiltIn) menu.Items.Add(preset.Name, null, (_, _) => Apply(preset));
         if (store.Settings.Presets.Count > 0) { menu.Items.Add(new ToolStripSeparator()); foreach (var preset in store.Settings.Presets) menu.Items.Add(preset.Name, null, (_, _) => Apply(preset)); }
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Save current as preset…", null, (_, _) => { var name = Prompt("Save preset", "Preset name"); if (!string.IsNullOrWhiteSpace(name)) store.SavePreset(name); });
         var delete = new ToolStripMenuItem("Delete saved preset"); foreach (var preset in store.Settings.Presets) delete.DropDownItems.Add(preset.Name, null, (_, _) => { store.Settings.Presets.Remove(preset); store.Save(); }); menu.Items.Add(delete);
         menu.Items.Add("Reset options", null, (_, _) => Apply(new("Default", new())));
-        menu.Items.Add("Open settings folder", null, (_, _) => OpenFolder(AppPaths.DataDirectory));
-        menu.Items.Add("Get app updates", null, (_, _) => Process.Start(new ProcessStartInfo("https://github.com/dustalexw/ytdlp-studio/releases/latest") { UseShellExecute = true }));
-        menu.Closed += (_, _) => menu.Dispose(); menu.Show(Cursor.Position);
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose); menu.Show(Cursor.Position);
+    }
+    public void ShowSettings() {
+        if (IsDisposed) return;
+        using var dialog = new SettingsDialog(Theme.Preference, session.ToolSummary, () => OpenFolder(AppPaths.DataDirectory));
+        if (dialog.ShowDialog(this) == DialogResult.OK && dialog.ChosenAppearance is { } appearance && appearance != Theme.Preference) session.ChangeAppearance(appearance, this, reopenSettings: true);
     }
     void RevealFiles() {
         if (SelectedJob() is not { } job) return;
@@ -180,8 +405,9 @@ public sealed class MainForm : Form {
     }
     void ShowLog() {
         if (SelectedJob() is not { } job) return;
-        using var dialog = new Form { Text = job.Title + " — Log", Size = LogicalToDeviceUnits(new Size(950, 600)), StartPosition = FormStartPosition.CenterParent, Font = Font };
-        var text = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, Font = new Font("Consolas", 9), Text = string.Join(Environment.NewLine, job.Log.ToArray()) }; dialog.Controls.Add(text);
+        using var dialog = new Form { Text = job.Title + " — Log", Size = LogicalToDeviceUnits(new Size(950, 600)), StartPosition = FormStartPosition.CenterParent, Font = Font, Padding = new Padding(LogicalToDeviceUnits(12)) };
+        var text = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, BorderStyle = BorderStyle.None, Font = new Font("Consolas", 9), Text = string.Join(Environment.NewLine, job.Log.ToArray()) }; dialog.Controls.Add(text);
+        Theme.StyleDialog(dialog);
         using var refresh = new System.Windows.Forms.Timer { Interval = 500 }; refresh.Tick += (_, _) => { if (job.Active) { text.Text = string.Join(Environment.NewLine, job.Log.ToArray()); text.SelectionStart = text.Text.Length; text.ScrollToCaret(); } }; refresh.Start(); dialog.ShowDialog(this);
     }
     void OpenFolder(string path) { try { Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch (Exception error) { Error(error); } }
@@ -192,13 +418,14 @@ public sealed class MainForm : Form {
         var text = new TextBox { Width = LogicalToDeviceUnits(320) };
         var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true, Anchor = AnchorStyles.Right };
         layout.Controls.Add(new Label { Text = label, AutoSize = true, UseMnemonic = false }); layout.Controls.Add(text); layout.Controls.Add(ok);
-        dialog.Controls.Add(layout); dialog.AcceptButton = ok; return dialog.ShowDialog(this) == DialogResult.OK ? text.Text : null;
+        dialog.Controls.Add(layout); dialog.AcceptButton = ok; Theme.StyleDialog(dialog); return dialog.ShowDialog(this) == DialogResult.OK ? text.Text : null;
     }
     protected override bool ProcessCmdKey(ref Message message, Keys keys) {
         if (keys == (Keys.Control | Keys.Enter)) { if (download.Enabled) StartDownload(); return true; }
         if (keys == (Keys.Control | Keys.I)) { if (analyze.Enabled) _ = AnalyzeAsync(); return true; }
         if (keys == (Keys.Control | Keys.L)) { urls.Focus(); urls.SelectAll(); return true; }
+        if (keys == (Keys.Control | Keys.Oemcomma)) { ShowSettings(); return true; }
         return base.ProcessCmdKey(ref message, keys);
     }
-    protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); searchCancellation?.Cancel(); } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); tips.Dispose(); if (!retiring) searchCancellation?.Cancel(); } base.Dispose(disposing); }
 }

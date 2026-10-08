@@ -20,7 +20,7 @@ public sealed class CommentDialog : Form {
         layout.Controls.Add(lists, 0, 1); layout.Controls.Add(preview, 1, 1);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
         var use = new Button { Text = "Use these chapters", AutoSize = true, DialogResult = DialogResult.OK }; var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel }; actions.Controls.AddRange([use, cancel]); layout.Controls.Add(actions, 0, 2); layout.SetColumnSpan(actions, 2);
-        Controls.Add(layout); AcceptButton = use; CancelButton = cancel; ResumeLayout(false); PerformLayout(); if (lists.Items.Count > 0) lists.SelectedIndex = 0;
+        Controls.Add(layout); AcceptButton = use; CancelButton = cancel; Theme.StyleDialog(this); ResumeLayout(false); PerformLayout(); if (lists.Items.Count > 0) lists.SelectedIndex = 0;
     }
     public static string Time(double seconds) { var t = TimeSpan.FromSeconds(seconds); return t.TotalHours >= 1 ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}" : $"{(int)t.TotalMinutes}:{t.Seconds:00}"; }
 }
@@ -61,7 +61,7 @@ public sealed class FormatDialog : Form {
         }
         layout.Controls.Add(table, 0, 1);
         var details = new TextBox { ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = info["chapters"] is JsonArray chapters ? string.Join(Environment.NewLine, chapters.OfType<JsonObject>().Select(c => CommentDialog.Time(CommentChapters.Number(c["start_time"])) + "   " + CommentChapters.Text(c["title"]))) : "No existing chapters" }; layout.Controls.Add(details, 0, 2);
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink }; var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.Cancel }; actions.Controls.AddRange([use, close, summary]); layout.Controls.Add(actions, 0, 3); Controls.Add(layout); AcceptButton = use; CancelButton = close; ResumeLayout(false); PerformLayout();
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink }; var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.Cancel }; actions.Controls.AddRange([use, close, summary]); layout.Controls.Add(actions, 0, 3); Controls.Add(layout); AcceptButton = use; CancelButton = close; Theme.StyleDialog(this); ResumeLayout(false); PerformLayout();
     }
     static string SizeText(double bytes) => bytes <= 0 ? "" : bytes >= 1e9 ? $"{bytes / 1e9:0.0} GB" : $"{bytes / 1e6:0.0} MB";
 }

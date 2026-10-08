@@ -172,7 +172,10 @@ public static class CommandBuilder {
         if (quote != '\0') throw new ArgumentException("An argument has an unclosed quote.");
         if (started) output.Add(token.ToString()); return output;
     }
-    // PowerShell literal quoting for Copy command; the actual runner uses ProcessStartInfo.ArgumentList.
-    public static string Display(string executable, IEnumerable<string> args) => "& " + string.Join(' ', new[] { executable }.Concat(args).Select(s => "'" + s.Replace("'", "''") + "'"));
+    // Shell quoting for the Copy command (PowerShell on Windows, POSIX sh elsewhere); the actual runner uses ProcessStartInfo.ArgumentList.
+    public static string Display(string executable, IEnumerable<string> args) => OperatingSystem.IsWindows()
+        ? "& " + string.Join(' ', new[] { executable }.Concat(args).Select(s => "'" + s.Replace("'", "''") + "'"))
+        : string.Join(' ', new[] { executable }.Concat(args).Select(PosixQuote));
+    static string PosixQuote(string s) => s.Length > 0 && s.All(c => char.IsAsciiLetterOrDigit(c) || "-_./:=+,%@".Contains(c)) ? s : "'" + s.Replace("'", "'\\''") + "'";
     static string FfmpegQuote(string value) => "'" + value.Replace("'", "'\\''") + "'";
 }

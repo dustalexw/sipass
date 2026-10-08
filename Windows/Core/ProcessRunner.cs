@@ -5,11 +5,12 @@ namespace YtdlpStudio.Core;
 public sealed record ToolPaths(string Ytdlp, string Ffmpeg, string Ffprobe, string Deno) {
     public static ToolPaths Bundled(string? baseDirectory = null) {
         string tools = Path.Combine(baseDirectory ?? AppContext.BaseDirectory, "tools");
-        return new(Path.Combine(tools, "yt-dlp.exe"), Path.Combine(tools, "ffmpeg.exe"), Path.Combine(tools, "ffprobe.exe"), Path.Combine(tools, "deno.exe"));
+        string Tool(string name) => Path.Combine(tools, OperatingSystem.IsWindows() ? name + ".exe" : name);
+        return new(Tool("yt-dlp"), Tool("ffmpeg"), Tool("ffprobe"), Tool("deno"));
     }
     public void EnsureAvailable() {
         foreach (var path in new[] { Ytdlp, Ffmpeg, Ffprobe, Deno })
-            if (!File.Exists(path)) throw new FileNotFoundException("A bundled dependency is missing: " + Path.GetFileName(path) + ". Extract the entire app ZIP to a folder before opening the app.", path);
+            if (!File.Exists(path)) throw new FileNotFoundException("A bundled dependency is missing: " + Path.GetFileName(path) + ". Extract the entire app archive to a folder before opening the app.", path);
     }
 }
 public sealed record ProcessResult(int ExitCode, string Stdout, string Stderr);
