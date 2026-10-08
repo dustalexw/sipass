@@ -3,10 +3,12 @@
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms><EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
-    <AssemblyName>YTDLPStudio</AssemblyName><Version>2.1.1</Version>
+    <AssemblyName>YTDLPStudio</AssemblyName><Version>2.2.1</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode><ApplicationIcon>AppIcon.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
     <Company>YT-DLP Studio</Company><Product>YT-DLP Studio</Product>
     <Description>Native Windows video and audio downloader</Description>
+    <!-- Custom controls are built in code, never in the designer. -->
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Core/YtdlpStudio.Core.csproj" /></ItemGroup>
 </Project>

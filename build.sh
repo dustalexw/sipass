@@ -10,7 +10,7 @@ APP_NAME="YT-DLP Studio"
 EXEC="YTDLPStudio"
 BUNDLE_ID="com.local.ytdlpstudio"
 # CI passes VERSION from .github/workflows/build.yml.
-VERSION="${VERSION:-2.1.1}"
+VERSION="${VERSION:-2.2.1}"
 
 ARCH_FLAGS=()
 if [[ "${1:-}" == "universal" ]]; then

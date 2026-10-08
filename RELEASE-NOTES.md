@@ -1,24 +1,24 @@
-YT-DLP Studio 2.1.1 ships the macOS app and the Windows portable edition together.
+YT-DLP Studio 2.2.1 ships a redesigned interface on macOS and Windows, and a new Linux edition.
 
-### What's new in 2.1.1
-- Windows: fixed clipped and cut-off text, buttons, and queue controls on displays scaled above 100% (common on laptops and Parallels). The window, dialogs, and options now scale with Windows display settings and when moved between monitors.
-- Windows: labels containing "&" (such as "Format & quality") display correctly.
-- macOS: same features as 2.0.0, now built, tested, and packaged by the same verified release workflow as Windows.
+### What's new in 2.2.1
+- **New look on every platform**, taken from the app icon: a deep-space backdrop, frosted panels with an iridescent edge, and a glowing Download button.
+- **Compact link field** with paste, analyze and clear buttons built in. It grows only when you paste several links. Press Enter to add to the queue; Shift+Enter (Option-Return on macOS) starts a new line.
+- **Neater icons**: coloured tiles for each options page and each download's status, matching round action buttons, and gradient progress bars.
+- **Light mode.** Choose System, Light or Dark under **Settings → Appearance** (gear button or Ctrl+, on Windows and Linux; ⌘, on macOS). Switching keeps running downloads going.
+- **New: Linux edition** for x64 desktops, with the same features as Windows and bundled yt-dlp, FFmpeg and Deno.
+
+Download features are unchanged from 2.1.1.
 
 ### macOS: download and start
-Download **YT-DLP-Studio-2.1.1-macOS.zip**, unzip it, and move **YT-DLP Studio.app** to Applications. Universal app for Apple Silicon and Intel Macs, macOS 13 or later. It is ad-hoc signed, so the first time, right-click the app and choose **Open**. Requires yt-dlp and FFmpeg: `brew install yt-dlp ffmpeg`.
+Download **YT-DLP-Studio-2.2.1-macOS.zip**, unzip it, and move **YT-DLP Studio.app** to Applications. Universal app for Apple Silicon and Intel Macs, macOS 13 or later. It is ad-hoc signed, so the first time, right-click the app and choose **Open**. Requires yt-dlp and FFmpeg: `brew install yt-dlp ffmpeg`.
 
 ### Windows: download and start
-Download **YT-DLP-Studio-2.1.1-Windows-x64.zip**, extract the entire ZIP, and open **YTDLPStudio.exe** inside the **YT-DLP Studio** folder. Supports Windows 10 22H2 and Windows 11 on x64 PCs. Keep the executable alongside its bundled files.
+Download **YT-DLP-Studio-2.2.1-Windows-x64.zip**, extract the entire ZIP, and open **YTDLPStudio.exe** inside the **YT-DLP Studio** folder. Supports Windows 10 22H2 and Windows 11 on x64 PCs. Keep the executable alongside its bundled files.
 
-### Windows: included
-- Native Windows interface with download queue, saved presets, format selection, logs, cancellation, and keyboard shortcuts.
-- Chapters from YouTube's description, comments, or comments when description chapters are missing; preview and choose a timestamp comment.
-- Audio extraction, chapter splitting and music tags, trimming, normalization, subtitles, metadata, thumbnails, playlists, and separate video encoding.
-- The psychedelic space icon adapted to Windows.
-- Bundled .NET runtime, yt-dlp (including its Python runtime), FFmpeg, ffprobe, and Deno. No separate dependency installation or PATH setup required.
-- Version-pinned dependency downloads, checksum verification, license notices, and a packaged file checksum manifest.
+### Linux: download and start
+Download **YT-DLP-Studio-2.2.1-Linux-x64.tar.gz**, extract it, and run **YTDLPStudio** inside the **YT-DLP Studio** folder. Run `./install.sh` once to add it to your applications menu. For x64 desktop distributions under X11 or XWayland. .NET, yt-dlp, FFmpeg, ffprobe and Deno are bundled.
 
 ### Verification
-The macOS build runs its test suite, including a real yt-dlp/FFmpeg chapter embedding, splitting, and tagging check, and verifies the universal binary, signature, version, and launch. The Windows build runs media integration checks with the bundled tools, including chapter metadata and track tags, H.264 encoding, audio trimming, normalization, sample rate, cancellation, and retry. It also launches and renders the native interface. Live YouTube extraction remains dependent on YouTube availability, authentication, and upstream yt-dlp support.
+Each platform build runs the shared test suite against real yt-dlp and FFmpeg processing (chapter metadata and track tags, encoding, trimming, normalization, cancellation and retry), launches the interface, and saves screenshots of both appearances on Windows and Linux. The macOS build also verifies the universal binary, signature and version. Live YouTube extraction remains dependent on YouTube availability, authentication, and upstream yt-dlp support.
 
+The 2.2.0 pre-release was a macOS-only preview of this redesign.

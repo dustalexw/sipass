@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Version = '2.1.1', [switch]$SkipPublish)
+param([string]$Version = '2.2.1', [switch]$SkipPublish)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $cache = Join-Path $root '.cache'
