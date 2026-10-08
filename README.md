@@ -5,30 +5,42 @@
 <p align="center">
   <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dustalexw/ytdlp-studio?style=for-the-badge&color=7e6eff&labelColor=1a1033"></a>
   <a href="https://github.com/dustalexw/ytdlp-studio/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/dustalexw/ytdlp-studio/build.yml?branch=main&style=for-the-badge&label=build&labelColor=1a1033"></a>
-  <img alt="Platforms: macOS and Windows" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-e650dc?style=for-the-badge&labelColor=1a1033">
+  <img alt="Platforms: macOS, Windows and Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-e650dc?style=for-the-badge&labelColor=1a1033">
 </p>
 
 <p align="center">
   <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><b>Download for macOS</b></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><b>Download for Windows</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/dustalexw/ytdlp-studio/releases/latest"><b>Download for Linux</b></a>
 </p>
 
-A native desktop front end for **yt-dlp** and **FFmpeg**, with SwiftUI on macOS
-and Windows Forms on Windows. Every major yt-dlp
+A native desktop front end for **yt-dlp** and **FFmpeg**, with SwiftUI on macOS,
+Windows Forms on Windows and Avalonia on Linux. Every major yt-dlp
 feature is a checkbox, picker or slider, and the exact command is shown live at the
 bottom of the window so you can copy it into Terminal.
 
 The bespoke psychedelic space icon, with an iridescent orbital form, a subtle central
-YouTube play mark, and an integrated download arrow, ships on both platforms. The
+YouTube play mark, and an integrated download arrow, ships on every platform. The
 1024px source is in `Assets/AppIcon.png`; `AppIcon.icns` contains the native macOS
 icon sizes and `Windows/App/AppIcon.ico` the Windows ones.
+
+The interface takes its look from the icon on all three platforms: a deep-space
+backdrop, frosted panels with an iridescent edge, a compact link field and a glowing
+Download button. Choose **System**, **Light** or **Dark** under Settings → Appearance.
 
 ## Windows portable edition
 
 The Windows x64 edition includes the .NET desktop runtime, yt-dlp, FFmpeg, ffprobe
 and Deno. Extract the entire ZIP and open `YTDLPStudio.exe`; no dependencies need
 to be installed separately. See [Windows instructions and build details](Windows/README.md).
+
+## Linux portable edition
+
+The Linux x64 edition bundles the .NET runtime, yt-dlp, FFmpeg, ffprobe and Deno.
+Extract the `.tar.gz`, run `./YTDLPStudio`, and optionally `./install.sh` to add it to
+your applications menu. See [Linux instructions and build details](Linux/README.md).
 
 ## macOS requirements
 

@@ -23,6 +23,7 @@ public sealed class MainForm : Form {
     readonly ChipButton findComments, cancelSearch;
     readonly GlowButton download = new("Download");
     readonly Panel emptyQueue = new() { Dock = DockStyle.Fill };
+    readonly Label placeholder = new() { Dock = DockStyle.Fill, AutoSize = false, UseMnemonic = false, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0), Margin = new Padding(0), Cursor = Cursors.IBeam };
     readonly ToolTip tips = new();
     readonly System.Windows.Forms.Timer timer = new() { Interval = 250 };
     CancellationTokenSource? searchCancellation;
@@ -65,8 +66,13 @@ public sealed class MainForm : Form {
         for (int i = 0; i < 3; i++) field.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         field.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         field.Controls.Add(new Label { Text = Theme.Glyph.Link, Font = Theme.Icons(11), ForeColor = Theme.Violet, AutoSize = true, Anchor = AnchorStyles.None, Margin = new Padding(0, 0, 8, 0) }, 0, 0);
-        urls.BackColor = p.Field; urls.ForeColor = p.Text; urls.Anchor = AnchorStyles.Left | AnchorStyles.Right; urls.Margin = new Padding(0); urls.Text = links;
-        field.Controls.Add(urls, 1, 0);
+        urls.BackColor = p.Field; urls.ForeColor = p.Text; urls.Dock = DockStyle.Fill; urls.Margin = new Padding(0); urls.Text = links;
+        // Multiline text boxes don't draw PlaceholderText, so a label stands in while the field is empty.
+        placeholder.Text = urls.PlaceholderText; placeholder.ForeColor = p.Secondary; placeholder.BackColor = p.Field; placeholder.Font = urls.Font;
+        placeholder.Click += (_, _) => urls.Focus();
+        var urlHost = new Panel { BackColor = p.Field, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0) };
+        urlHost.Controls.Add(urls); urlHost.Controls.Add(placeholder); placeholder.BringToFront();
+        field.Controls.Add(urlHost, 1, 0);
         clearLinks = IconBtn(Theme.Glyph.Close, "Clear links", () => { urls.Clear(); urls.Focus(); }, 24, p.Field); clearLinks.Visible = false; clearLinks.Anchor = AnchorStyles.None;
         var paste = IconBtn(Theme.Glyph.Paste, "Paste from clipboard", PasteLinks, 30); paste.Anchor = AnchorStyles.None;
         analyze = IconBtn(Theme.Glyph.Search, "Analyze formats, chapters and playlist items (Ctrl+I)", () => _ = AnalyzeAsync(), 30); analyze.Anchor = AnchorStyles.None;
@@ -205,7 +211,8 @@ public sealed class MainForm : Form {
     /// Keeps the link field one line tall, growing to four lines when several links are pasted.
     void FitLinkField() {
         int lines = Math.Clamp(urls.Lines.Length, 1, 4);
-        urls.Height = lines * urls.Font.Height + LogicalToDeviceUnits(2);
+        urls.Parent!.Height = lines * urls.Font.Height + LogicalToDeviceUnits(4);
+        placeholder.Visible = urls.TextLength == 0;
         pill.Height = Math.Max(LogicalToDeviceUnits(44), urls.Height + pill.Padding.Vertical + LogicalToDeviceUnits(4));
         download.Height = LogicalToDeviceUnits(46);
         clearLinks.Visible = urls.TextLength > 0;
@@ -257,7 +264,7 @@ public sealed class MainForm : Form {
             if (selected != null && current.Contains(selected)) jobs.SelectedItem = selected;
             jobs.EndUpdate();
         } else jobs.Invalidate();
-        emptyQueue.Visible = current.Length == 0;
+        emptyQueue.Visible = current.Length == 0; jobs.Visible = current.Length > 0;
         queueCount.Visible = current.Length > 0; queueCount.Text = current.Length.ToString();
         UpdateJobActions();
     }

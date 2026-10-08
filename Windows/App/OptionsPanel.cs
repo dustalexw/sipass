@@ -49,7 +49,7 @@ public sealed class OptionsPanel : UserControl {
                         var selectedValues = list.Items.Cast<Choice>().Where((_, i) => i == e.Index ? e.NewValue == CheckState.Checked : list.GetItemChecked(i)).Select(c => c.Value).ToArray(); Set(selectedValues);
                     }; control = list;
                 } else if (setting.Choices.Length > 0) {
-                    var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = width, Tag = "stretch", AccessibleName = setting.Label, FlatStyle = FlatStyle.Flat, BackColor = Theme.P.Field, ForeColor = Theme.P.Text };
+                    var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = width, Tag = "stretch", AccessibleName = setting.Label, BackColor = Theme.P.Field, ForeColor = Theme.P.Text };
                     foreach (var item in ParseChoices(setting.Choices)) combo.Items.Add(item);
                     combo.SelectedItem = combo.Items.Cast<Choice>().FirstOrDefault(c => c.Value == value?.ToString());
                     if (combo.SelectedIndex < 0) combo.SelectedIndex = 0;

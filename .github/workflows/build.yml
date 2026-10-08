@@ -1,21 +1,21 @@
-name: Windows and macOS builds
+name: Windows, macOS and Linux builds
 on:
   push:
     branches: [main]
-    paths: ['Windows/**', 'Sources/**', 'Tests/**', 'Package.swift', 'build.sh', 'AppIcon.icns', 'Assets/**', 'RELEASE-NOTES.md', '.github/workflows/build.yml']
+    paths: ['Windows/**', 'Linux/**', 'Sources/**', 'Tests/**', 'Package.swift', 'build.sh', 'AppIcon.icns', 'Assets/**', 'RELEASE-NOTES.md', '.github/workflows/build.yml']
   pull_request:
-    paths: ['Windows/**', 'Sources/**', 'Tests/**', 'Package.swift', 'build.sh', 'AppIcon.icns', 'Assets/**', 'RELEASE-NOTES.md', '.github/workflows/build.yml']
+    paths: ['Windows/**', 'Linux/**', 'Sources/**', 'Tests/**', 'Package.swift', 'build.sh', 'AppIcon.icns', 'Assets/**', 'RELEASE-NOTES.md', '.github/workflows/build.yml']
   workflow_dispatch:
     inputs:
       publish_release:
-        description: Publish this version for Windows and macOS after all checks pass (never overwrites an existing release)
+        description: Publish this version for Windows, macOS and Linux after all checks pass (never overwrites an existing release)
         type: boolean
         default: false
 permissions:
   contents: read
 env:
   # Single source for the release version; both build scripts stamp it into the apps.
-  VERSION: '2.1.1'
+  VERSION: '2.2.1'
 jobs:
   windows:
     runs-on: windows-latest
@@ -47,11 +47,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Windows-interface-preview
-          path: Windows/dist/YT-DLP Studio/Windows-smoke.png
+          path: Windows/dist/YT-DLP Studio/Windows-smoke*.png
           if-no-files-found: error
       - name: Package portable ZIP
         run: |
-          Remove-Item 'Windows/dist/YT-DLP Studio/Windows-smoke.png'
+          Remove-Item 'Windows/dist/YT-DLP Studio/Windows-smoke*.png'
           Compress-Archive -Path 'Windows/dist/YT-DLP Studio' -DestinationPath "Windows/dist/YT-DLP-Studio-$env:VERSION-Windows-x64.zip"
           Get-FileHash "Windows/dist/YT-DLP-Studio-$env:VERSION-Windows-x64.zip" -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@v7
@@ -99,10 +99,50 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.401'
+      - name: Build app and bundle verified tools
+        run: Linux/scripts/build.sh "$VERSION"
+      - name: Test core and bundled media processing
+        run: |
+          export YTDLP_TEST_TOOLS="$PWD/Linux/dist/YT-DLP Studio/tools"
+          dotnet run --project Windows/Tests/YtdlpStudio.Tests.csproj -c Release
+      - name: Start interface on a virtual display
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb libice6 libsm6 libfontconfig1
+          if ! xvfb-run -a -s "-screen 0 1600x1000x24" "Linux/dist/YT-DLP Studio/YTDLPStudio" --smoke-test "$RUNNER_TEMP"; then
+            cat "$RUNNER_TEMP/smoke-test-error.txt" 2>/dev/null || true
+            echo "::error::Linux interface smoke test failed"; exit 1
+          fi
+          ls -l "$RUNNER_TEMP"/Linux-smoke*.png
+      - name: Save interface preview
+        uses: actions/upload-artifact@v7
+        with:
+          name: Linux-interface-preview
+          path: ${{ runner.temp }}/Linux-smoke*.png
+          if-no-files-found: error
+      - name: Package portable archive
+        run: |
+          # tar keeps the executable bits that a ZIP would lose.
+          tar -C Linux/dist -czf "YT-DLP-Studio-$VERSION-Linux-x64.tar.gz" "YT-DLP Studio"
+          sha256sum "YT-DLP-Studio-$VERSION-Linux-x64.tar.gz"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: YT-DLP-Studio-${{ env.VERSION }}-Linux-x64
+          path: YT-DLP-Studio-${{ env.VERSION }}-Linux-x64.tar.gz
+          retention-days: 30
+          if-no-files-found: error
+
   release:
-    # Runs only after both platform builds pass. If GitHub fails to assign this job a runner,
+    # Runs only after all three platform builds pass. If GitHub fails to assign this job a runner,
     # use "Re-run failed jobs": the verified builds are reused, nothing is rebuilt.
-    needs: [windows, macos]
+    needs: [windows, macos, linux]
     if: github.event_name == 'workflow_dispatch' && inputs.publish_release && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -115,20 +155,21 @@ jobs:
           pattern: YT-DLP-Studio-${{ env.VERSION }}-*
           merge-multiple: true
           path: package
-      - name: Publish Windows and macOS packages
+      - name: Publish Windows, macOS and Linux packages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="v$VERSION"
           win="package/YT-DLP-Studio-$VERSION-Windows-x64.zip"
           mac="package/YT-DLP-Studio-$VERSION-macOS.zip"
+          linux="package/YT-DLP-Studio-$VERSION-Linux-x64.tar.gz"
           ls -l package
-          [[ -f "$win" && -f "$mac" ]] || { echo "::error::Missing a platform package"; exit 1; }
+          [[ -f "$win" && -f "$mac" && -f "$linux" ]] || { echo "::error::Missing a platform package"; exit 1; }
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             # Published releases are never replaced; bump VERSION at the top of this workflow instead.
             echo "::error::$tag is already published. Bump VERSION in .github/workflows/build.yml to release a new build."
             exit 1
           fi
-          gh release create "$tag" "$win" "$mac" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "YT-DLP Studio $VERSION — Windows and macOS" \
+          gh release create "$tag" "$win" "$mac" "$linux" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "YT-DLP Studio $VERSION — Windows, macOS and Linux" \
             --notes-file RELEASE-NOTES.md --latest

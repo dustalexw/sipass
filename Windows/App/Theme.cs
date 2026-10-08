@@ -107,7 +107,7 @@ public static class Theme {
                     grid.DefaultCellStyle.SelectionBackColor = P.Selection; grid.DefaultCellStyle.SelectionForeColor = P.Text;
                     grid.AlternatingRowsDefaultCellStyle.BackColor = P.Field; grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal; break;
                 case TextBoxBase or ListBox or NumericUpDown: c.BackColor = P.Field; c.ForeColor = P.Text; break;
-                case ComboBox combo: combo.FlatStyle = FlatStyle.Flat; combo.BackColor = P.Field; combo.ForeColor = P.Text; break;
+                case ComboBox combo: combo.BackColor = P.Field; combo.ForeColor = P.Text; break;
                 case Button button:
                     button.FlatStyle = FlatStyle.Flat; button.BackColor = P.Chip; button.ForeColor = P.Text;
                     button.FlatAppearance.BorderColor = P.Hairline; button.FlatAppearance.MouseOverBackColor = P.Hover; break;
