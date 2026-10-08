@@ -74,22 +74,29 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if tools.ytdlpPath == nil || tools.ffmpegPath == nil { toolBanner }
             header
-            Divider()
+            if tools.ytdlpPath == nil || tools.ffmpegPath == nil {
+                toolBanner.padding(.horizontal, 14).padding(.bottom, 10)
+            }
             HSplitView {
                 optionsPane
+                    .glassPanel()
+                    .padding(.leading, 14).padding(.trailing, 6)
                     .frame(minWidth: 620, idealWidth: 700)
                 QueueView()
+                    .glassPanel()
+                    .padding(.trailing, 14).padding(.leading, 6)
                     .frame(minWidth: 340, idealWidth: 420)
             }
-            Divider()
             if store.options.chapterSource != .youtube {
-                Text("Comment chapters are prepared by the app before downloading. The command below shows download options only.")
-                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 6)
+                Hint("Comment chapters are prepared by the app before downloading. The command below shows download options only.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18).padding(.top, 8)
             }
             CommandPreviewBar(command: CommandBuilder.displayCommand(for: store.options, urls: urls))
+                .padding(.horizontal, 14).padding(.vertical, 12)
         }
+        .background(CosmicBackground())
         .sheet(item: $inspecting) { info in
             FormatInspector(info: info,
                             onUseFormat: { store.options.customFormat = $0 },
@@ -124,45 +131,22 @@ struct ContentView: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $urlText)
-                        .font(.system(.body, design: .monospaced))
-                        .scrollContentBackground(.hidden)
-                        .padding(6)
-                    if urlText.isEmpty {
-                        Text("Paste one or more links, one per line")
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 6)
-                            .allowsHitTesting(false)
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                BrandMark()
+                    .padding(.trailing, 4)
+                addressField
+                Button(action: startDownload) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 12, weight: .bold))
+                        Text(urls.count > 1 ? "Download \(urls.count)" : "Download")
                     }
                 }
-                .frame(height: 66)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
-
-                VStack(spacing: 6) {
-                    Button {
-                        if let s = NSPasteboard.general.string(forType: .string) {
-                            urlText = urlText.trimmed.isEmpty ? s.trimmed : urlText.trimmed + "\n" + s.trimmed
-                        }
-                    } label: {
-                        Label("Paste", systemImage: "doc.on.clipboard").frame(width: 92)
-                    }
-                    Button(action: analyze) {
-                        HStack(spacing: 6) {
-                            if isFetching { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "magnifyingglass") }
-                            Text("Analyze")
-                        }
-                        .frame(width: 92)
-                    }
-                    .disabled(urls.isEmpty || isFetching || tools.ytdlpPath == nil)
-                    .keyboardShortcut("i", modifiers: .command)
-                    .help("List available formats, chapters and playlist items (⌘I)")
-                }
+                .buttonStyle(GlowButtonStyle())
+                .disabled(urls.isEmpty)
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("Add to queue (⌘↩)")
             }
 
             HStack(spacing: 12) {
@@ -171,26 +155,60 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 340)
+                .frame(width: 320)
 
                 summaryChip
 
                 Spacer()
 
                 presetsMenu
-
-                Button(action: startDownload) {
-                    Label(urls.count > 1 ? "Download \(urls.count)" : "Download", systemImage: "arrow.down.circle.fill")
-                        .padding(.horizontal, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(urls.isEmpty)
-                .keyboardShortcut(.return, modifiers: .command)
-                .help("Add to queue (⌘↩)")
             }
         }
-        .padding(12)
+        // Leave room for the window's traffic lights in the hidden title bar.
+        .padding(.leading, 14)
+        .padding(.trailing, 14)
+        .padding(.top, 4)
+        .padding(.bottom, 14)
+    }
+
+    /// Compact, pill-shaped link field. Grows to a few lines when several links are pasted.
+    private var addressField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "link")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.ribbonDiagonal)
+            TextField("Paste a link — or several, one per line", text: $urlText, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .lineLimit(1...4)
+                .onSubmit(startDownload)
+            if !urlText.isEmpty {
+                Button { urlText = "" } label: { Image(systemName: "xmark") }
+                    .buttonStyle(IconButtonStyle(diameter: 20))
+                    .help("Clear")
+            }
+            Button {
+                if let s = NSPasteboard.general.string(forType: .string) {
+                    urlText = urlText.trimmed.isEmpty ? s.trimmed : urlText.trimmed + "\n" + s.trimmed
+                }
+            } label: { Image(systemName: "doc.on.clipboard") }
+                .buttonStyle(IconButtonStyle(diameter: 24))
+                .help("Paste from clipboard")
+            Button(action: analyze) {
+                if isFetching { ProgressView().controlSize(.mini) }
+                else { Image(systemName: "magnifyingglass") }
+            }
+            .buttonStyle(IconButtonStyle(diameter: 24))
+            .disabled(urls.isEmpty || isFetching || tools.ytdlpPath == nil)
+            .keyboardShortcut("i", modifiers: .command)
+            .help("Analyze: list formats, chapters and playlist items (⌘I)")
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 5)
+        .padding(.vertical, 5)
+        .frame(minHeight: 34)
+        .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(Theme.fieldFill))
+        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).strokeBorder(Theme.hairline))
     }
 
     private var summaryChip: some View {
@@ -206,9 +224,12 @@ struct ContentView: View {
             text = parts.joined(separator: " · ")
         }
         return Text(text)
-            .font(.callout)
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
             .lineLimit(1)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Capsule().fill(Theme.chipFill))
+            .overlay(Capsule().strokeBorder(Theme.hairline))
     }
 
     private var presetsMenu: some View {
@@ -239,7 +260,11 @@ struct ContentView: View {
         } label: {
             Label("Presets", systemImage: "slider.horizontal.3")
         }
+        .menuStyle(.borderlessButton)
         .fixedSize()
+        .padding(.horizontal, 12).padding(.vertical, 5)
+        .background(Capsule().fill(Theme.chipFill))
+        .overlay(Capsule().strokeBorder(Theme.hairline))
     }
 
     private var toolBanner: some View {
@@ -253,9 +278,11 @@ struct ContentView: View {
             Button("Scan again") { tools.refresh() }
             Button("Settings…") { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
         }
+        .controlSize(.small)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.yellow.opacity(0.15))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.yellow.opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.yellow.opacity(0.25)))
     }
 
     // MARK: Options pane
@@ -263,19 +290,22 @@ struct ContentView: View {
     private var optionsPane: some View {
         HStack(spacing: 0) {
             List(OptionCategory.allCases, selection: $category) { c in
-                HStack {
-                    Label(c.title, systemImage: c.symbol)
-                    Spacer()
+                HStack(spacing: 9) {
+                    IconTile(symbol: c.symbol, colors: Theme.tile(c))
+                    Text(c.title).lineLimit(1)
+                    Spacer(minLength: 2)
                     if c.isCustomized(store.options) {
-                        Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                        Circle().fill(Theme.ribbonDiagonal).frame(width: 6, height: 6)
                     }
                 }
+                .padding(.vertical, 2)
                 .tag(c)
             }
             .listStyle(.sidebar)
-            .frame(width: 215)
+            .scrollContentBackground(.hidden)
+            .frame(width: 225)
 
-            Divider()
+            Rectangle().fill(Theme.hairline).frame(width: 1)
 
             Group {
                 switch category ?? .format {
@@ -301,6 +331,7 @@ struct ContentView: View {
                 }
             }
             .toggleStyle(.checkbox)
+            .scrollContentBackground(.hidden)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -339,24 +370,32 @@ struct CommandPreviewBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "terminal").foregroundStyle(.secondary)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(Theme.ribbonDiagonal)
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(command)
-                    .font(.system(.caption, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .lineLimit(1)
                     .fixedSize()
             }
-            Button(copied ? "Copied" : "Copy command") {
+            Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(command, forType: .string)
                 copied = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+            } label: {
+                Image(systemName: copied ? "checkmark" : "square.on.square")
             }
-            .controlSize(.small)
+            .buttonStyle(IconButtonStyle(diameter: 22))
+            .help(copied ? "Copied" : "Copy command")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
+        .padding(.leading, 12)
+        .padding(.trailing, 5)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Theme.commandFill))
+        .overlay(Capsule().strokeBorder(Theme.hairline))
     }
 }

@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when launched via `swift run` (no bundle); harmless inside the .app.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        AppAppearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "")?.apply()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -23,7 +24,8 @@ struct YTDLPStudioApp: App {
     @StateObject private var downloads = DownloadManager()
 
     init() {
-        UserDefaults.standard.register(defaults: ["maxConcurrent": 2, "playSound": true])
+        UserDefaults.standard.register(defaults: ["maxConcurrent": 2, "playSound": true,
+                                                  "appearance": AppAppearance.system.rawValue])
     }
 
     var body: some Scene {
@@ -33,7 +35,9 @@ struct YTDLPStudioApp: App {
                 .environmentObject(tools)
                 .environmentObject(downloads)
                 .frame(minWidth: 1100, minHeight: 700)
+                .tint(Theme.accent)
         }
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {}
         }
@@ -41,6 +45,7 @@ struct YTDLPStudioApp: App {
         Settings {
             SettingsView()
                 .environmentObject(tools)
+                .tint(Theme.accent)
         }
     }
 }
