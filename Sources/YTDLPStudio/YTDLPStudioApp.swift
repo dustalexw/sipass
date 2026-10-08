@@ -22,6 +22,7 @@ struct YTDLPStudioApp: App {
     @StateObject private var store = OptionsStore()
     @StateObject private var tools = ToolLocator()
     @StateObject private var downloads = DownloadManager()
+    @Environment(\.openWindow) private var openWindow
 
     init() {
         UserDefaults.standard.register(defaults: ["maxConcurrent": 2, "playSound": true,
@@ -40,7 +41,18 @@ struct YTDLPStudioApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .appInfo) {
+                Button("About Sipass") { openWindow(id: "about") }
+            }
         }
+
+        Window("About Sipass", id: "about") {
+            AboutView()
+                .environmentObject(tools)
+                .tint(Theme.accent)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
 
         Settings {
             SettingsView()

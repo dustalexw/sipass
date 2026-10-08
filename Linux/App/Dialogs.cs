@@ -52,7 +52,7 @@ public static class Dialogs {
 /// Settings: appearance (System, Light, Dark) and where the app keeps its data. Changes apply immediately.
 public sealed class SettingsWindow : ThemedWindow {
     readonly AppSession session;
-    public SettingsWindow(AppSession session) : base("Settings", 640, 470) {
+    public SettingsWindow(AppSession session) : base("Settings", 640, 640) {
         this.session = session; CanResize = false; Build();
         App.Instance.AppearanceChanged += Build;
         Closed += (_, _) => App.Instance.AppearanceChanged -= Build;
@@ -74,14 +74,24 @@ public sealed class SettingsWindow : ThemedWindow {
         }
         var openData = Secondary("Open settings folder"); openData.Click += (_, _) => { try { Directory.CreateDirectory(AppPaths.DataDirectory); Shell.Open(AppPaths.DataDirectory); } catch (Exception) { } };
         var updates = Secondary("Get app updates"); updates.Click += (_, _) => { try { Shell.Open("https://github.com/dustalexw/sipass/releases/latest"); } catch (Exception) { } };
+        var source = Secondary("Source on GitHub"); source.Click += (_, _) => { try { Shell.Open("https://github.com/dustalexw/sipass"); } catch (Exception) { } };
         var done = Primary("Done"); done.Click += (_, _) => Close();
         TextBlock Heading(string text) => new() { Text = text, FontSize = 16, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 4, 0, 4) };
         SetBody(new StackPanel { Spacing = 10, Children = {
             Heading("Appearance"), cards,
             new TextBlock { Text = "System follows your desktop's light or dark preference.", Classes = { "secondary" }, FontSize = 12.5, Margin = new Thickness(0, 0, 0, 10) },
             Heading("About"),
-            new TextBlock { Text = session.ToolSummary.Length > 0 ? session.ToolSummary : "Checking bundled tools…", Classes = { "secondary" }, TextWrapping = TextWrapping.Wrap },
-            new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0), Children = { openData, updates } },
+            Look.Card(new StackPanel { Spacing = 8, Children = {
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = {
+                    new TextBlock { Text = "Sipass", FontSize = 26, FontWeight = FontWeight.ExtraBold, Foreground = Look.Ribbon(), VerticalAlignment = VerticalAlignment.Center },
+                    new Border { CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 2), VerticalAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(1), BorderBrush = Look.B(Look.P.Hairline),
+                        Child = new TextBlock { Text = "v" + AppSession.Version, FontSize = 12, FontFamily = new FontFamily("DejaVu Sans Mono, monospace"), Classes = { "secondary" } } } } },
+                new TextBlock { Text = "Every yt-dlp and FFmpeg feature, in a native desktop app for macOS, Windows and Linux.", TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = "•  Every option as a checkbox, picker or slider, with the exact command shown live\n•  A download queue with retries, presets and simultaneous downloads\n•  Chapters from timestamp comments, track tags, trimming and normalization",
+                    Classes = { "secondary" }, FontSize = 12.5, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = session.ToolSummary.Length > 0 ? session.ToolSummary : "Checking bundled tools…", Classes = { "secondary" }, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) },
+                new TextBlock { Text = "Downloading is done by yt-dlp and FFmpeg, each under its own licence. Only download content you have the right to save.", Classes = { "secondary" }, FontSize = 11.5, TextWrapping = TextWrapping.Wrap } } }, 12, new Thickness(16)),
+            new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0), Children = { openData, updates, source } },
             Actions(done) } }, new Thickness(24, 18, 24, 18));
     }
     static Control Mini(bool dark, int column) {

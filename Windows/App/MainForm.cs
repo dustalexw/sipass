@@ -401,7 +401,7 @@ public sealed class MainForm : Form {
     }
     public void ShowSettings() {
         if (IsDisposed) return;
-        using var dialog = new SettingsDialog(Theme.Preference, session.ToolSummary, () => OpenFolder(AppPaths.DataDirectory));
+        using var dialog = new SettingsDialog(Theme.Preference, session.ToolSummary, () => OpenFolder(AppPaths.DataDirectory), AppVersion);
         if (dialog.ShowDialog(this) == DialogResult.OK && dialog.ChosenAppearance is { } appearance && appearance != Theme.Preference) session.ChangeAppearance(appearance, this, reopenSettings: true);
     }
     void RevealFiles() {
