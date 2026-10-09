@@ -42,11 +42,12 @@ struct YTDLPStudioApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(replacing: .appInfo) {
-                Button("About Sipass") { openWindow(id: "about") }
+                Button("About Sipass") { openWindow(id: "about", value: "about") }
             }
         }
 
-        Window("About Sipass", id: "about") {
+        // A value-based group never opens on launch (a plain `Window` scene would flash up at startup).
+        WindowGroup("About Sipass", id: "about", for: String.self) { _ in
             AboutView()
                 .environmentObject(tools)
                 .tint(Theme.accent)

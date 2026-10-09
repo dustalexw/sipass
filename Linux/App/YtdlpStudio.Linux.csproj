@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
-    <AssemblyName>Sipass</AssemblyName><RootNamespace>YtdlpStudio.Linux</RootNamespace><Version>2.4.0</Version>
+    <AssemblyName>Sipass</AssemblyName><RootNamespace>YtdlpStudio.Linux</RootNamespace><Version>2.4.1</Version>
     <Company>Sipass</Company><Product>Sipass</Product>
     <Description>Linux video and audio downloader</Description>
     <ApplicationIcon>../../Windows/App/AppIcon.ico</ApplicationIcon>
