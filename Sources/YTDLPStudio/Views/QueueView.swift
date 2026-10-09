@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import QuickLookThumbnailing
 
 struct QueueView: View {
     @EnvironmentObject private var downloads: DownloadManager
@@ -76,7 +77,11 @@ struct JobRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
-                statusIcon
+                if job.status == .finished {
+                    FinishedThumbnail(job: job, fallback: statusIcon)
+                } else {
+                    statusIcon
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(job.displayTitle)
                         .font(.callout.weight(.medium))
@@ -171,6 +176,56 @@ struct JobRow: View {
             }
         }
         .buttonStyle(IconButtonStyle(diameter: 24))
+    }
+}
+
+private let mediaExtensions: Set<String> = [
+    "mp4", "mkv", "webm", "mov", "m4v", "avi", "flv", "mp3", "m4a", "opus", "ogg", "flac", "wav", "aac", "aiff"]
+
+/// Shown only once a download has finished: a thumbnail of the saved file with the check badge over it.
+/// Until the thumbnail is ready (or if none can be made) the plain check tile is shown.
+struct FinishedThumbnail<Fallback: View>: View {
+    @ObservedObject var job: DownloadJob
+    let fallback: Fallback
+    @State private var image: NSImage?
+
+    private var mediaPath: String? {
+        let existing = job.outputFiles.filter { FileManager.default.fileExists(atPath: $0) }
+        return existing.first { mediaExtensions.contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
+    }
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 64, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 18, height: 18)
+                            .background(Circle().fill(LinearGradient(colors: [Color(red: 0.15, green: 0.75, blue: 0.55), Theme.cyan],
+                                                                     startPoint: .topLeading, endPoint: .bottomTrailing)))
+                            .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                            .offset(x: 5, y: 5)
+                    }
+                    .padding([.trailing, .bottom], 5)
+            } else {
+                fallback
+            }
+        }
+        .task(id: job.outputFiles) {
+            guard let path = mediaPath else { image = nil; return }
+            let request = QLThumbnailGenerator.Request(
+                fileAt: URL(fileURLWithPath: path), size: CGSize(width: 64, height: 40),
+                scale: NSScreen.main?.backingScaleFactor ?? 2, representationTypes: .thumbnail)
+            image = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
+        }
     }
 }
 

@@ -289,20 +289,16 @@ struct ContentView: View {
 
     private var optionsPane: some View {
         HStack(spacing: 0) {
-            List(OptionCategory.allCases, selection: $category) { c in
-                HStack(spacing: 9) {
-                    IconTile(symbol: c.symbol, colors: Theme.tile(c))
-                    Text(c.title).lineLimit(1)
-                    Spacer(minLength: 2)
-                    if c.isCustomized(store.options) {
-                        Circle().fill(Theme.ribbonDiagonal).frame(width: 6, height: 6)
+            ScrollView {
+                VStack(spacing: 2) {
+                    ForEach(OptionCategory.allCases) { c in
+                        SidebarRow(category: c, selected: (category ?? .format) == c,
+                                   customized: c.isCustomized(store.options)) { category = c }
                     }
                 }
-                .padding(.vertical, 2)
-                .tag(c)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
             .frame(width: 225)
 
             Rectangle().fill(Theme.hairline).frame(width: 1)
@@ -397,5 +393,57 @@ struct CommandPreviewBar: View {
         .padding(.vertical, 5)
         .background(Capsule().fill(Theme.commandFill))
         .overlay(Capsule().strokeBorder(Theme.hairline))
+    }
+}
+
+
+/// Sidebar row with a selection fill from the app's palette. The fill stays violet-blue whether or not
+/// the window is active (just softer when inactive) instead of the system's neutral gray.
+private struct SidebarRow: View {
+    let category: OptionCategory
+    let selected: Bool
+    let customized: Bool
+    let action: () -> Void
+    @Environment(\.controlActiveState) private var activeState
+    @State private var hovering = false
+
+    private var windowActive: Bool { activeState != .inactive }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                IconTile(symbol: category.symbol, colors: Theme.tile(category))
+                Text(category.title).lineLimit(1)
+                    .foregroundStyle(selected || hovering ? .primary : .secondary)
+                Spacer(minLength: 2)
+                if customized {
+                    Circle().fill(Theme.ribbonDiagonal).frame(width: 6, height: 6)
+                }
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 8)
+            .background(fill)
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [Theme.pink.opacity(selected ? 0.35 : 0), Theme.violet.opacity(selected ? 0.30 : 0), Theme.cyan.opacity(selected ? 0.30 : 0)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    @ViewBuilder private var fill: some View {
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        if selected {
+            shape.fill(LinearGradient(colors: [Theme.violet.opacity(windowActive ? 0.34 : 0.20),
+                                               Theme.blue.opacity(windowActive ? 0.24 : 0.12)],
+                                      startPoint: .topLeading, endPoint: .bottomTrailing))
+        } else if hovering {
+            shape.fill(Theme.chipFill)
+        }
     }
 }
